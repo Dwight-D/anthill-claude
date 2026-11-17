@@ -5,6 +5,13 @@
 /** The backlog verbs that move an item's ownership; each one links the session. */
 export const VERBS = ['claim', 'deliver', 'close', 'block', 'release']
 
+/**
+ * The backlog verbs that change what the Now pane shows: the ownership verbs
+ * plus the ones that create, triage, approve, edit or renumber items. Used by
+ * the pane's refresh trigger only; session linking keeps `VERBS`.
+ */
+export const REFRESH_VERBS = [...VERBS, 'new', 'triage', 'approve', 'renumber', 'set']
+
 // Flags that take a value, per verb (`--flag value` or `--flag=value`).
 const VALUE_FLAGS = new Set([
   '--by', '--session', '--workstream', '--evidence', '--evidence-file',
@@ -142,6 +149,26 @@ export function parseAnthillCommand(command, stdout) {
     // A claim that failed (taken, not approved) prints no id: link nothing.
     if (verb === 'claim' && typeof stdout === 'string' && idFromClaimOutput(stdout) !== item) return null
     return by ? { verb, item, by } : { verb, item }
+  }
+  return null
+}
+
+/**
+ * The first `anthill backlog <verb>` of a command line whose verb is in
+ * `REFRESH_VERBS`, whatever its arguments (`--help` excluded); null otherwise.
+ * The Now pane's refresh trigger: it needs no item id.
+ * @param {string} command the shell command (Bash or PowerShell)
+ * @returns {string | null} the verb
+ */
+export function refreshVerb(command) {
+  if (typeof command !== 'string') return null
+  for (let words of tokenize(command)) {
+    if (words[0] === '&') words = words.slice(1)
+    if (!isAnthill(words[0] ?? '') || words[1] !== 'backlog') continue
+    const verb = words[2]
+    if (!REFRESH_VERBS.includes(verb)) continue
+    if (words.slice(3).some(w => w === '--help' || w === '-h')) continue
+    return verb
   }
   return null
 }

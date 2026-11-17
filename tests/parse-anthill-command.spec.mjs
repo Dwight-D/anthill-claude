@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { idFromClaimOutput, linkArgs, parseAnthillCommand as parse } from '../hooks/scripts/parse-anthill-command.mjs'
+import { idFromClaimOutput, linkArgs, parseAnthillCommand as parse, refreshVerb } from '../hooks/scripts/parse-anthill-command.mjs'
 
 test('each verb with a positional id', () => {
   assert.deepEqual(parse('anthill backlog claim cli-foo'), { verb: 'claim', item: 'cli-foo' })
@@ -86,4 +86,19 @@ test('linkArgs orders the session link flags', () => {
     ['session', 'link', '--session', 's', '--agent', 'a', '--handle', 'w', '--item', 'i', '--verb', 'claim', '--transcript', 't', '--cwd', 'c', '--role', 'worker'],
   )
   assert.deepEqual(linkArgs({ verb: 'close', item: 'i' }, { session: 's' }), ['session', 'link', '--session', 's', '--item', 'i', '--verb', 'close'])
+})
+
+test('refreshVerb: any backlog verb that changes the Now pane, no id needed', () => {
+  assert.equal(refreshVerb('anthill backlog claim ANT-5 --by w'), 'claim')
+  assert.equal(refreshVerb('anthill backlog new "a title" --value "why"'), 'new')
+  assert.equal(refreshVerb('anthill backlog triage ANT-3 --workstream dev'), 'triage')
+  assert.equal(refreshVerb('anthill backlog approve ANT-3'), 'approve')
+  assert.equal(refreshVerb('anthill backlog renumber --dry-run'), 'renumber')
+  assert.equal(refreshVerb('anthill backlog set ANT-3 priority high'), 'set')
+  assert.equal(refreshVerb('cd E:\proj; & anthill.exe backlog deliver ANT-5 --evidence "x"'), 'deliver')
+  assert.equal(refreshVerb('anthill backlog list --active --json'), null)
+  assert.equal(refreshVerb('anthill backlog show ANT-5 --json'), null)
+  assert.equal(refreshVerb('anthill backlog claim --help'), null)
+  assert.equal(refreshVerb('git commit -m "anthill backlog claim"'), null)
+  assert.equal(refreshVerb(undefined), null)
 })
