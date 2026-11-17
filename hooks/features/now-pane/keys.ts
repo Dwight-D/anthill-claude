@@ -46,7 +46,7 @@ export const parseKeyArg = (arg: string, prefix: string): string | null => {
   if (!PREFIX.test(prefix) || !s) return null
   if (/^[1-9][0-9]*$/.test(s)) return `${prefix}-${s}`
   const m = /^([A-Za-z]{2,5})-([1-9][0-9]*)$/.exec(s)
-  if (m && m[1].toUpperCase() === prefix) return `${prefix}-${m[2]}`
+  if (m && m[1] && m[1].toUpperCase() === prefix) return `${prefix}-${m[2]}`
   return null
 }
 
@@ -57,7 +57,7 @@ export const parseKeyArg = (arg: string, prefix: string): string | null => {
 export const readPrefix = (workstreamsMd: string): string | null => {
   if (typeof workstreamsMd !== 'string') return null
   const m = /^key-prefix:[ \t]*["']?([A-Za-z]{2,5})["']?[ \t]*$/m.exec(workstreamsMd)
-  if (!m) return null
+  if (!m || !m[1]) return null
   const prefix = m[1].toUpperCase()
   return PREFIX.test(prefix) ? prefix : null
 }

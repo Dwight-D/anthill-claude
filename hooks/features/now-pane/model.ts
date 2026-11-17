@@ -1,6 +1,12 @@
 // The Now pane's row model: the CLI's `--json` output → rows, counts, ages.
 // Pure: no Claude or Node imports, so it runs under the engine and under
 // `node --test` alike. Contract: anthill-cli/docs/ITEM_KEYS_SPEC.md §5.2.
+// The row, counts, now and detail types live in types/index.d.ts (the
+// plugin's `$.state` contract, which must be self-contained).
+
+import type { Counts, Detail, Now, Row } from '../../../types'
+
+export type { Counts, Detail, Now, Row }
 
 /** One item as `anthill backlog list --json` / `show --json` prints it. */
 export type Item = {
@@ -47,36 +53,6 @@ export type SessionRecord = {
   verb?: string
 }
 
-/** One pane row. `ageMs` is the age at `refreshedAt`; the drawing formats it. */
-export type Row = {
-  key: string
-  title: string
-  summary: string
-  status: string
-  dispatch: string
-  disposition: string
-  workstream: string
-  claimedBy: string
-  session: string
-  session8: string
-  /** Milliseconds since the item's last activity at refresh time; null when unknown. */
-  ageMs: number | null
-  transcript: string
-  path: string
-}
-
-export type Counts = { ready: number; proposed: number; blocked: number }
-
-/** The `now` atom's value. */
-export type Now = {
-  rows: Row[]
-  validation: Row[]
-  counts: Counts
-  /** Epoch ms of the refresh that produced this value. */
-  refreshedAt: number
-  /** The turn count at that refresh. */
-  turn: number
-}
 
 export const EMPTY_NOW: Now = {
   rows: [],
@@ -233,7 +209,7 @@ export const sections = (body: string): Record<string, string> => {
     const m = /^##\s+(.+?)\s*$/.exec(line)
     if (m) {
       flush()
-      name = m[1].toLowerCase()
+      name = (m[1] ?? '').toLowerCase()
       lines = []
     } else if (name) {
       lines.push(line)
@@ -248,31 +224,6 @@ export const shortLogLine = (line: string): string => {
   const t = line.replace(/^-\s*/, '').trim()
   const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}):\d{2}Z\s+(.*)$/.exec(t)
   return m ? `${m[2]}Z ${m[3]}` : t
-}
-
-export type Detail = {
-  key: string
-  title: string
-  status: string
-  dispatch: string
-  disposition: string
-  workstream: string
-  priority: string
-  risk: string
-  claimedBy: string
-  session: string
-  session8: string
-  ageMs: number | null
-  reporter: string
-  createdAt: string
-  verify: string
-  formerId: string
-  path: string
-  transcript: string
-  summary: string
-  acceptance: string
-  /** The last three `## Log` lines, oldest first. */
-  log: string[]
 }
 
 /** The detail model from `show --json` plus the ledger. */
