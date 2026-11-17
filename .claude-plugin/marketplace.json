@@ -1,12 +1,14 @@
 {
   "name": "anthill-claude",
   "description": "Claude Code mods for Anthill sessions.",
-  "owner": { "name": "Max" },
+  "owner": {
+    "name": "Max"
+  },
   "plugins": [
     {
       "name": "anthill-claude",
       "source": "./",
-      "description": "Claude Code mods for Anthill sessions: UI, hooks, and other Claude-side behavior. Currently: message timestamps."
+      "description": "Claude Code mods for Anthill sessions: UI, hooks, and other Claude-side behavior. Currently: message timestamps, language sanitization, session-to-item correlation."
     }
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "description": "Links the Claude Code session (and its transcript) to the backlog item an anthill backlog claim/deliver/close/block/release command names, via anthill session link; plus the hooks module (register.tsx).",
+  "description": "Links the Claude Code session (and its transcript) to the backlog item an anthill backlog claim/deliver/close/block/release command names, via anthill session link; plus the hooks module (register.tsx: timestamps, language sanitization, session correlation).",
   "hooks": {
     "PostToolUse": [
       {
