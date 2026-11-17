@@ -1,1 +1,90 @@
-{ "modules": ["./register.tsx"] }
+{
+  "description": "Links the Claude Code session (and its transcript) to the backlog item an anthill backlog claim/deliver/close/block/release command names, via anthill session link; plus the hooks module (register.tsx).",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-link.mjs\" || true",
+            "if": "Bash(anthill backlog claim *)",
+            "async": true,
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-link.mjs\" || true",
+            "if": "Bash(anthill backlog deliver *)",
+            "async": true,
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-link.mjs\" || true",
+            "if": "Bash(anthill backlog close *)",
+            "async": true,
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-link.mjs\" || true",
+            "if": "Bash(anthill backlog block *)",
+            "async": true,
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-link.mjs\" || true",
+            "if": "Bash(anthill backlog release *)",
+            "async": true,
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-link.mjs\" || true",
+            "if": "PowerShell(anthill backlog claim *)",
+            "async": true,
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-link.mjs\" || true",
+            "if": "PowerShell(anthill backlog deliver *)",
+            "async": true,
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-link.mjs\" || true",
+            "if": "PowerShell(anthill backlog close *)",
+            "async": true,
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-link.mjs\" || true",
+            "if": "PowerShell(anthill backlog block *)",
+            "async": true,
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-link.mjs\" || true",
+            "if": "PowerShell(anthill backlog release *)",
+            "async": true,
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  },
+  "modules": [
+    "./register.tsx"
+  ]
+}
