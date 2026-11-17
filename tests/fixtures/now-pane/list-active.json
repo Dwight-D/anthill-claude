@@ -1,0 +1,27 @@
+[
+  {
+    "id": "ANT-5",
+    "title": "anthill-claude: in-session 'Now' pane showing active backlog items and their sessions",
+    "summary": "anthill-claude mod: docked Now pane (active + validation rows from the CLI's --json), key chips under transcript rows, detail view on press, hover card, status line, /ant command.",
+    "value": "Phase 4b of Backlog v2: a mod Pane beside the chat rendering 'anthill backlog list --active --json' + 'anthill session list --json', refreshed on turn.complete, so a supervisor session sees what its workers hold without leaving Claude Code (the TUI Now mode covers the terminal case; this covers the in-session case)",
+    "workstream": "dev",
+    "status": "in-progress",
+    "dispatch": "approved",
+    "disposition": "auto",
+    "priority": "high",
+    "reporter": "user",
+    "change-type": "tooling",
+    "risk": "additive",
+    "verify": "claude plugin validate and claude plugin test green in anthill-claude; pane renders list and detail from fixture JSON; chips drawn for ANT-N mentions in user and assistant rows",
+    "source": "supervisor session 2026-11-17, BACKLOG_V2_SPEC.md §8.2",
+    "created-at": "2026-11-17T12:12:44Z",
+    "triaged-at": "2026-11-17T13:47:51Z",
+    "claimed-at": "2026-11-17T14:46:11Z",
+    "claimed-by": "claude-pane",
+    "session": "38acdb2e-2f54-4bd2-a2e8-29b22a9eec0f",
+    "former-id": "anthill-claude-in-session-now-pane-showing-active",
+    "path": "E:\\Dev\\frameworks\\anthill\\.anthill\\backlog\\dev\\0005-anthill-claude-in-session-now-pane.md",
+    "ready": false,
+    "active": true
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "session": "38acdb2e-2f54-4bd2-a2e8-29b22a9eec0f",
+    "agent": "",
+    "handle": "claude-pane",
+    "item": "ANT-5",
+    "role": "worker",
+    "transcript": "C:\\Users\\thewa\\.claude\\projects\\E--Dev-frameworks-anthill\\38acdb2e-2f54-4bd2-a2e8-29b22a9eec0f.jsonl",
+    "cwd": "E:\\Dev\\frameworks\\anthill",
+    "started": "2026-11-17T13:55:51Z",
+    "last-seen": "2026-11-17T14:46:11Z",
+    "verb": "claim"
+  },
+  {
+    "session": "38acdb2e-2f54-4bd2-a2e8-29b22a9eec0f",
+    "agent": "a3bb4eb958a85e0e8",
+    "handle": "fw-keys",
+    "item": "ANT-9",
+    "role": "worker",
+    "transcript": "C:\\Users\\thewa\\.claude\\projects\\E--Dev-frameworks-anthill\\38acdb2e-2f54-4bd2-a2e8-29b22a9eec0f.jsonl",
+    "cwd": "E:\\Dev\\frameworks\\anthill\\anthill-claude",
+    "started": "2026-11-17T13:56:12Z",
+    "last-seen": "2026-11-17T14:00:29Z",
+    "verb": "close"
+  },
+  {
+    "session": "38acdb2e-2f54-4bd2-a2e8-29b22a9eec0f",
+    "agent": "a6378d7813180a82b",
+    "handle": "cli-keys",
+    "item": "ANT-7",
+    "role": "worker",
+    "transcript": "C:\\Users\\thewa\\.claude\\projects\\E--Dev-frameworks-anthill\\38acdb2e-2f54-4bd2-a2e8-29b22a9eec0f.jsonl",
+    "cwd": "E:\\Dev\\frameworks\\anthill\\anthill-cli",
+    "started": "2026-11-17T13:55:51Z",
+    "last-seen": "2026-11-17T14:39:19Z",
+    "verb": "close"
+  },
+  {
+    "session": "38acdb2e-2f54-4bd2-a2e8-29b22a9eec0f",
+    "agent": "a92ad8fbf22433ea0",
+    "handle": "claude-pane",
+    "item": "ANT-5",
+    "role": "worker",
+    "transcript": "C:\\Users\\thewa\\.claude\\projects\\E--Dev-frameworks-anthill\\38acdb2e-2f54-4bd2-a2e8-29b22a9eec0f.jsonl",
+    "cwd": "E:\\Dev\\frameworks\\anthill",
+    "started": "2026-11-17T14:46:12Z",
+    "last-seen": "2026-11-17T14:46:12Z",
+    "verb": "claim"
+  }
+]
