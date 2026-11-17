@@ -10,27 +10,25 @@ const format = (ms: number) => {
 // Messages carry no timestamp of their own; the first time a message row is
 // drawn is recorded under its id in the cross-session store.
 export const timestamps: Register = on => {
-  for (const component of ['UserMessage', 'AssistantMessage'] as const) {
-    on('ui.render', { component }, async ($, e, next) => {
-      if (component === 'AssistantMessage' && !(e.props as { isFirstOfReply?: boolean }).isFirstOfReply) {
-        return next(e)
-      }
+  on('ui.render', { component: ['UserMessage', 'AssistantMessage'] }, async ($, e, next) => {
+    if (e.component === 'AssistantMessage' && !(e.props as { isFirstOfReply?: boolean }).isFirstOfReply) {
+      return next(e)
+    }
 
-      const key = `ts:${e.requestId}`
-      let at = Number(await $.store.get(key))
-      if (!at) {
-        at = await $.clock.now()
-        await $.store.set(key, at)
-      }
+    const key = `ts:${e.requestId}`
+    let at = Number(await $.store.get(key))
+    if (!at) {
+      at = await $.clock.now()
+      await $.store.set(key, at)
+    }
 
-      const { Box, Text } = $.ui.resolve(e)
+    const { Box, Text } = $.ui.resolve(e)
 
-      return (
-        <Box flexDirection="column">
-          <Text dimColor>{format(at)}</Text>
-          {await next(e)}
-        </Box>
-      )
-    })
-  }
+    return (
+      <Box flexDirection="column">
+        <Text dimColor>{format(at)}</Text>
+        {await next(e)}
+      </Box>
+    )
+  })
 }
