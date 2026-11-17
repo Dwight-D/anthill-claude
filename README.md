@@ -12,7 +12,7 @@ Claude Code mods (a Claude Code plugin) for Anthill sessions: UI, hooks, and oth
 Some harmless wording reads to the model safeguards as a request to extract model reasoning: a subagent brief asking to "write your reasoning trail" was refused at launch every time it was tried. This feature substitutes such wording with a plain equivalent and shows a toast in the chat:
 
 ```
-Wording that can trip model safeguards: reasoning trail → evidence trail
+Wording that can trip model safeguards: reasoning trail → findings and rationale
 ```
 
 Where it applies:

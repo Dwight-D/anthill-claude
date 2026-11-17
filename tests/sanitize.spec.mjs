@@ -8,7 +8,7 @@ import { TERMS } from '../hooks/features/language-sanitization/terms.ts'
 
 test('every seed term substitutes', () => {
   const cases = [
-    ['write your reasoning trail', 'write your evidence trail'],
+    ['write your reasoning trail', 'write your findings and rationale'],
     ['keep a reasoning trace', 'keep a investigation trace'],
     ['show your chain-of-thought', 'show your step-by-step rationale'],
     ['show your chain of thought', 'show your step-by-step rationale'],
@@ -23,7 +23,7 @@ test('every seed term substitutes', () => {
 test('match is case-insensitive and keeps a leading capital', () => {
   assert.equal(sanitize('REASONING TRAIL here', TERMS).text, 'Evidence trail here')
   assert.equal(sanitize('Reasoning Trail: write it', TERMS).text, 'Evidence trail: write it')
-  assert.equal(sanitize('a reasoning-trail file', TERMS).text, 'a evidence trail file')
+  assert.equal(sanitize('a reasoning-trail file', TERMS).text, 'a findings and rationale file')
 })
 
 test('clean text is unchanged and reports nothing', () => {
@@ -44,13 +44,13 @@ test('reports which terms fired, with counts, and builds the warning', () => {
   assert.deepEqual(
     r.fired.map(f => ({ match: f.match, replacement: f.replacement, count: f.count })),
     [
-      { match: 'reasoning trail', replacement: 'evidence trail', count: 2 },
+      { match: 'reasoning trail', replacement: 'findings and rationale', count: 2 },
       { match: 'chain of thought', replacement: 'step-by-step rationale', count: 1 },
     ],
   )
   assert.ok(r.fired.every(f => f.note.length > 0))
   assert.equal(
     warning(r.fired),
-    'Wording that can trip model safeguards: reasoning trail → evidence trail; chain of thought → step-by-step rationale',
+    'Wording that can trip model safeguards: reasoning trail → findings and rationale; chain of thought → step-by-step rationale',
   )
 })

@@ -21,7 +21,7 @@ export type Term = {
 export const TERMS: Term[] = [
   {
     pattern: 'reasoning[\\s-]+trails?',
-    replacement: 'evidence trail',
+    replacement: 'findings and rationale',
     note: 'Observed: a subagent brief asking to "write your reasoning trail" was refused at launch 4/4 times; it reads as a request to extract model reasoning.',
   },
   {
