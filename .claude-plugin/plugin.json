@@ -1,9 +1,10 @@
 {
   "name": "anthill-claude",
-  "version": "0.3.0",
-  "description": "Claude Code mods for Anthill sessions: UI, hooks, and other Claude-side behavior. Currently: message timestamps, language sanitization, session-to-item correlation.",
+  "version": "0.4.0",
+  "description": "Claude Code mods for Anthill sessions: UI, hooks, and other Claude-side behavior. Currently: message timestamps, language sanitization, session-to-item correlation, the Now pane with key chips and /ant.",
   "author": {
     "name": "Max"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "types": "./types/index.d.ts"
 }
