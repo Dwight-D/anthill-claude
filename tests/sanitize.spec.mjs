@@ -21,7 +21,7 @@ test('every seed term substitutes', () => {
 })
 
 test('match is case-insensitive and keeps a leading capital', () => {
-  assert.equal(sanitize('REASONING TRAIL here', TERMS).text, 'Evidence trail here')
+  assert.equal(sanitize('REASONING TRAIL here', TERMS).text, 'Findings and rationale here')
   assert.equal(sanitize('Reasoning Trail: write it', TERMS).text, 'Evidence trail: write it')
   assert.equal(sanitize('a reasoning-trail file', TERMS).text, 'a findings and rationale file')
 })
