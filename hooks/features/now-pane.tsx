@@ -153,8 +153,8 @@ export const nowPane: Register = on => {
     if (found) {
       await $.command.register({
         name: COMMAND,
-        description: 'Open the Anthill pane (/ant 74 opens an item)',
-        argumentHint: '[key]',
+        description: 'Open the Anthill pane (/ant 74 opens an item, /ant help lists the keys)',
+        argumentHint: '[key|help]',
       })
       void refresh($)
     }
@@ -178,6 +178,7 @@ export const nowPane: Register = on => {
     const found = await read($, install)
     if (!found) return { text: 'No anthill installation in this session (no .anthill/backlog/workstreams.md in the cwd).' }
     const arg = e.args.trim()
+    if (/^(help|\?|-h|--help)$/i.test(arg)) return { text: HELP_TEXT }
     if (!arg) {
       if (await isOpen($)) {
         await $.ui.close({ id: PANE })
@@ -244,23 +245,23 @@ export const nowPane: Register = on => {
             <Text dimColor>{row ? 'Loading the item…' : `${key} is not in the active list; loading…`}</Text>
           )}
           <Box flexDirection="row" gap={1}>
-            <Button key="back" label="back" role="dismiss" onPress={() => void select($, null)} />
+            <Button key="back" label="back" hotkey="b" role="dismiss" onPress={() => void select($, null)} />
           </Box>
-          <Text dimColor>Esc returns the keys · back to the list · Tab walks buttons</Text>
+          <Text dimColor>b back · c copy · o open file · t transcript · Tab walks · Esc returns the keys</Text>
         </Box>
       )
     }
 
-    const section = (name: string, rows: Row[]) => (
+    const section = (name: string, rows: Row[], offset: number) => (
       <Box flexDirection="column">
         <Text weight="bold" dimColor>
           {name} ({rows.length})
         </Text>
         {rows.length === 0 && <Text dimColor>none</Text>}
-        {rows.map(r => (
+        {rows.map((r, i) => (
           <Box key={`row:${r.key}`} flexDirection="column" hover={{ scope: `now:${r.key}` }}>
             <Box flexDirection="row" gap={1}>
-              <Button key={`open:${r.key}`} plain label={r.key} onPress={() => void select($, r.key)} />
+              <Button key={`open:${r.key}`} plain label={r.key} hotkey={rowHotkey(offset + i)} onPress={() => void select($, r.key)} />
               <Text color={pillColor(r.status)}>{r.status}</Text>
               <Text>{r.claimedBy || 'unclaimed'}</Text>
               {!inline && r.session8 && <Text dimColor>{r.session8}</Text>}
@@ -286,9 +287,9 @@ export const nowPane: Register = on => {
           <Text dimColor>
             Anthill · {found.prefix} · active {state.rows.length} · validation {state.validation.length} · ready {state.counts.ready}
           </Text>
-          {[...state.rows, ...state.validation].map(r => (
+          {[...state.rows, ...state.validation].map((r, i) => (
             <Box key={`row:${r.key}`} flexDirection="row" gap={1}>
-              <Button key={`open:${r.key}`} plain label={r.key} onPress={() => void select($, r.key)} />
+              <Button key={`open:${r.key}`} plain label={r.key} hotkey={rowHotkey(i)} onPress={() => void select($, r.key)} />
               <Text color={pillColor(r.status)}>{r.status}</Text>
               <Text>{r.claimedBy || 'unclaimed'}</Text>
               <Text dimColor>{formatAge(r.ageMs)}</Text>
@@ -305,15 +306,15 @@ export const nowPane: Register = on => {
         <Text dimColor>
           ↻ {state.refreshedAt ? `${formatAge(at - state.refreshedAt)} ago` : 'never'} · turn {state.turn}
         </Text>
-        {section('ACTIVE', state.rows)}
-        {section('VALIDATION', state.validation)}
+        {section('ACTIVE', state.rows, 0)}
+        {section('VALIDATION', state.validation, state.rows.length)}
         <Box flexDirection="column">
           <Text weight="bold" dimColor>
             BLOCKED ({state.counts.blocked})
           </Text>
         </Box>
         <Text dimColor>{footerText(state, at)}</Text>
-        <Text dimColor>/ant toggles · /ant 74 opens an item · Tab walks rows · Esc returns the keys</Text>
+        <Text dimColor>1-9 open a row · Tab walks · Esc returns the keys · /ant help for all keys</Text>
       </Box>
     )
   })
@@ -330,44 +331,66 @@ export const nowPane: Register = on => {
 
     const { Box, Text, Button } = $.ui.resolve(e)
     const state = await read($, now)
+    // One hover group per chip per message: a card reveals only for the chip
+    // under the pointer, never for the same key in another message.
+    const msg = hash(`${e.component}:${props.text ?? ''}`)
+    const scope = (key: string) => `chip:${msg}:${key}`.slice(0, 64)
 
+    // The hover cards are `position: "absolute"` children of a zero-height
+    // anchor drawn between the message and the chip row, offset `bottom={0}`:
+    // each card's bottom edge sits on the chip row's top edge, so it opens
+    // upward over the message text, at the row's left edge. Absolute boxes take
+    // no room, so a reveal moves neither the neighbouring chips nor the
+    // transcript (an in-flow card widened its chip and grew the row).
     return (
       <Box flexDirection="column">
         {await next(e)}
+        <Box position="relative" height={0} flexDirection="column">
+          {keys.map(key => {
+            const row = findRow(state, key)
+            return (
+              <Box
+                key={`card:${key}`}
+                position="absolute"
+                bottom={0}
+                left={0}
+                width={CARD_WIDTH}
+                display="none"
+                hover={{ scope: scope(key), display: 'flex' }}
+                flexDirection="column"
+                borderStyle="round"
+                paddingX={1}
+              >
+                {row ? (
+                  <Box flexDirection="column">
+                    <Box flexDirection="row" gap={1}>
+                      <Text weight="bold">{key}</Text>
+                      <Text>{[row.status, row.dispatch, row.disposition, row.workstream].filter(Boolean).join(' · ')}</Text>
+                    </Box>
+                    <Text wrap="wrap">{row.summary || row.title}</Text>
+                    <Text dimColor>
+                      {row.claimedBy ? `claimed by ${row.claimedBy} · ${formatAge(row.ageMs)}` : 'unclaimed'}
+                    </Text>
+                  </Box>
+                ) : (
+                  <Text dimColor>{key} · not in the active list · press to open</Text>
+                )}
+              </Box>
+            )
+          })}
+        </Box>
         <Box flexDirection="row" flexWrap="wrap" gap={1}>
           {keys.map(key => {
             const row = findRow(state, key)
             const label = row ? `${key} · ${truncate(row.summary || row.title, 40)} · ${row.status}` : key
             return (
-              <Box key={`chip:${key}`} flexDirection="column" hover={{ scope: `now:${key}` }}>
+              <Box key={`chip:${key}`} hover={{ scope: scope(key) }}>
                 <Button
                   key={`chip-open:${key}`}
                   label={label}
                   dimColor={!row}
                   onPress={() => void select($, key, true)}
                 />
-                <Box
-                  display="none"
-                  hover={{ display: 'flex' }}
-                  flexDirection="column"
-                  borderStyle="round"
-                  paddingX={1}
-                >
-                  {row ? (
-                    <Box flexDirection="column">
-                      <Box flexDirection="row" gap={1}>
-                        <Text weight="bold">{key}</Text>
-                        <Text>{[row.status, row.dispatch, row.disposition, row.workstream].filter(Boolean).join(' · ')}</Text>
-                      </Box>
-                      <Text wrap="wrap">{row.summary || row.title}</Text>
-                      <Text dimColor>
-                        {row.claimedBy ? `claimed by ${row.claimedBy} · ${formatAge(row.ageMs)}` : 'unclaimed'}
-                      </Text>
-                    </Box>
-                  ) : (
-                    <Text dimColor>{key} · not in the active list · press to open</Text>
-                  )}
-                </Box>
               </Box>
             )
           })}
@@ -376,6 +399,37 @@ export const nowPane: Register = on => {
     )
   }).catch(($, e, next) => next(e)) // never fail a row over the chips
 }
+
+const CARD_WIDTH = 64
+
+/** A short stable id for a string (djb2, base 36). */
+const hash = (s: string) => {
+  let h = 5381
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0
+  return (h >>> 0).toString(36)
+}
+
+/** Row hotkeys `1`–`9`, in display order across ACTIVE then VALIDATION. */
+const rowHotkey = (index: number) => (index < 9 ? String(index + 1) : undefined)
+
+export const HELP_TEXT = [
+  'Anthill keys',
+  '',
+  '  /ant              toggle the Anthill pane (opens it focused)',
+  '  /ant 74           open ANT-74 in the pane (also /ant ANT-74)',
+  '  /ant help         this help',
+  '  ctrl+x tab        give the keyboard to the pane (or click it)',
+  '',
+  'While the pane holds the keyboard:',
+  '  1-9               open the numbered row',
+  '  tab / arrows      walk rows and buttons; enter presses',
+  '  b                 back to the list (detail view)',
+  '  c / o / t         copy key / open file / transcript (detail view)',
+  '  esc               hand the keyboard back to the prompt',
+  '',
+  'Key chips in the transcript are mouse-only: hover shows the card, click opens',
+  'the item. From the keyboard, use /ant <key>.',
+].join('\n')
 
 const pillColor = (status: string) =>
   status === 'in-progress' ? 'green' : status === 'validation' ? 'yellow' : status === 'blocked' ? 'red' : undefined
@@ -439,8 +493,8 @@ const DetailButtons = ({
   hasPath: boolean
 }) => (
   <Box flexDirection="row" gap={1}>
-    <Button key="copy-key" label="copy key" onPress={copyKey} />
-    {hasPath && <Button key="open-file" label="open file" onPress={openFile} />}
-    <Button key="transcript" label="transcript" onPress={transcript} />
+    <Button key="copy-key" label="copy key" hotkey="c" onPress={copyKey} />
+    {hasPath && <Button key="open-file" label="open file" hotkey="o" onPress={openFile} />}
+    <Button key="transcript" label="transcript" hotkey="t" onPress={transcript} />
   </Box>
 )

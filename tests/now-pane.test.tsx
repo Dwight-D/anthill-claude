@@ -317,3 +317,49 @@ test('a backlog verb through Bash triggers a refresh; a failed list keeps the la
   await ui.unmount()
   expect(after).toBeGreaterThan(before)
 })
+
+test('chip cards are absolute, open above the chip row, and light per message', async ($, on) => {
+  engine(on)
+  await start($)
+  const mount = (requestId: string, text: string) =>
+    $.ui.mount({ plugin: PLUGIN, surface: 'terminal', component: 'AssistantMessage', requestId, props: { text, isFirstOfReply: true } })
+
+  const a = await mount('m7', 'ANT-5 and ANT-66')
+  // The hover props ride on the drawn tree, not on find()'s description.
+  const scopeOf = async (ui: typeof a, key: string) => {
+    const walk = (n: unknown): string | undefined => {
+      if (!n || typeof n !== 'object') return undefined
+      const el = n as { props?: { key?: string; children?: unknown }; hover?: { scope?: string }; key?: string; children?: unknown }
+      if ((el.key ?? el.props?.key) === key) return el.hover?.scope ?? (el.props as { hover?: { scope?: string } } | undefined)?.hover?.scope
+      const kids = el.children ?? el.props?.children
+      for (const c of Array.isArray(kids) ? kids : [kids]) {
+        const found = walk(c)
+        if (found) return found
+      }
+      return undefined
+    }
+    return walk(await ui.drawn())
+  }
+  expect((await a.find({ key: 'card:ANT-5' }))?.props).toMatchObject({ position: 'absolute', bottom: 0, left: 0, display: 'none' })
+  const scope = await scopeOf(a, 'card:ANT-5')
+  expect(scope).toBeDefined()
+  expect(await scopeOf(a, 'chip:ANT-5')).toBe(scope)
+  expect(await scopeOf(a, 'card:ANT-66')).not.toBe(scope)
+  await a.unmount()
+
+  const b = await mount('m8', 'ANT-5 again, elsewhere')
+  expect(await scopeOf(b, 'card:ANT-5')).not.toBe(scope)
+  await b.unmount()
+})
+
+test('/ant help lists the keys; pane rows carry 1-9 hotkeys', async ($, on) => {
+  engine(on)
+  await start($)
+  const res = await $.command.run({ command: 'ant', args: 'help', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 160 } })
+  expect(res?.text).toMatch(/ctrl\+x tab/)
+  expect(res?.text).toMatch(/1-9/)
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect((await ui.find({ type: 'Button', key: 'open:ANT-5' }))?.props.hotkey).toBe('1')
+  await ui.unmount()
+})
