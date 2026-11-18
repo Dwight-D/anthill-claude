@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
 
 - now-pane: the key-chip hover card opens above the chip row as an absolutely positioned box, so a reveal no longer pushes the neighbouring chips aside or scrolls the transcript; each card lights only for its own chip in its own message.
 - now-pane: keyboard hotkeys — `1`–`9` open pane rows; `b`/`c`/`o`/`t` press back / copy key / open file / transcript in the detail view; `/ant help` lists every key.
