@@ -1,6 +1,6 @@
 {
   "name": "anthill-claude",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Claude Code mods for Anthill sessions: UI, hooks, and other Claude-side behavior. Currently: message timestamps, language sanitization, session-to-item correlation, the Now pane with key chips and /ant.",
   "author": {
     "name": "Max"

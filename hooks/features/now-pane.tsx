@@ -55,8 +55,51 @@ const run = async ($: Dollar, root: string, args: string[]) => {
   return stdout
 }
 
+/** Looks for an installation at `root`; null when there is none. */
+const discover = async ($: Dollar, root: string): Promise<Install | null> => {
+  try {
+    const workstreams = join(root, '.anthill', 'backlog', 'workstreams.md')
+    if (await $.fs.exists(workstreams)) {
+      const prefix = readPrefix(await $.fs.read(workstreams))
+      if (prefix) return { root, prefix }
+      $.ui.log(`now-pane: ${workstreams} has no key-prefix; the Now pane is off`, { to: 'debug' })
+    }
+  } catch (err) {
+    $.ui.log(`now-pane: discovery: ${message(err)}`, { to: 'debug' })
+  }
+  return null
+}
+
+const registerCommand = ($: Dollar) =>
+  $.command.register({
+    name: COMMAND,
+    description: 'Open the Anthill pane (/ant 74 opens an item, /ant help lists the keys)',
+    argumentHint: '[key|help]',
+  })
+
+/**
+ * The session's installation. session.start does not reach every session
+ * (a cleared or resumed one, a reloaded module), so a missing result is
+ * rediscovered from the session's cwd on demand.
+ */
+const ensureInstall = async ($: Dollar): Promise<Install | null> => {
+  const known = await read($, install)
+  if (known) return known
+  let found: Install | null = null
+  try {
+    found = await discover($, await $.session.cwd())
+  } catch (err) {
+    $.ui.log(`now-pane: cwd: ${message(err)}`, { to: 'debug' })
+  }
+  if (found) {
+    await update($, install, () => found)
+    await registerCommand($)
+  }
+  return found
+}
+
 const refreshOnce = async ($: Dollar) => {
-  const found = await read($, install)
+  const found = await ensureInstall($)
   if (!found) return
   const { root, prefix } = found
   const [active, all, sessions] = await Promise.all([
@@ -108,7 +151,7 @@ const refresh = ($: Dollar): Promise<void> => {
 const isOpen = async ($: Dollar) => (await $.ui.panes()).some(p => p.id === PANE)
 
 const loadDetail = async ($: Dollar, key: string) => {
-  const found = await read($, install)
+  const found = await ensureInstall($)
   if (!found) return
   if ((await read($, details))[key]) return
   const shown = await run($, found.root, ['backlog', 'show', key, '--json'])
@@ -125,7 +168,7 @@ const loadDetail = async ($: Dollar, key: string) => {
 
 /** Selects a key, retitles the pane and opens it (focused when asked). */
 const select = async ($: Dollar, key: string | null, focus?: true) => {
-  const found = await read($, install)
+  const found = await ensureInstall($)
   if (!found) return
   await update($, selected, () => key)
   opened = true
@@ -137,45 +180,30 @@ export const nowPane: Register = on => {
   // --- triggers ---------------------------------------------------------------
 
   on('session.start', async ($, e, next) => {
-    const root = e.cwd
-    let found: Install | null = null
-    try {
-      const workstreams = join(root, '.anthill', 'backlog', 'workstreams.md')
-      if (await $.fs.exists(workstreams)) {
-        const prefix = readPrefix(await $.fs.read(workstreams))
-        if (prefix) found = { root, prefix }
-        else $.ui.log(`now-pane: ${workstreams} has no key-prefix; the Now pane is off`, { to: 'debug' })
-      }
-    } catch (err) {
-      $.ui.log(`now-pane: discovery: ${message(err)}`, { to: 'debug' })
-    }
+    const found = await discover($, e.cwd)
     await update($, install, () => found)
     if (found) {
-      await $.command.register({
-        name: COMMAND,
-        description: 'Open the Anthill pane (/ant 74 opens an item, /ant help lists the keys)',
-        argumentHint: '[key|help]',
-      })
+      await registerCommand($)
       void refresh($)
     }
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
-    if (!e.agentId && (await read($, install))) void refresh($)
+    if (!e.agentId && (await ensureInstall($))) void refresh($)
     return next(e)
   })
 
   on('tool.call', { tool: ['Bash', 'PowerShell'] }, async ($, e, next) => {
     const ran = await next(e)
-    if (ran.deny === undefined && refreshVerb(e.command) && (await read($, install))) void refresh($)
+    if (ran.deny === undefined && refreshVerb(e.command) && (await ensureInstall($))) void refresh($)
     return ran
   }).catch(($, e, next) => next(e)) // never refuse a command over this hook
 
   // --- the command ------------------------------------------------------------
 
   on('command.run', { command: COMMAND }, async ($, e) => {
-    const found = await read($, install)
+    const found = await ensureInstall($)
     if (!found) return { text: 'No anthill installation in this session (no .anthill/backlog/workstreams.md in the cwd).' }
     const arg = e.args.trim()
     if (/^(help|\?|-h|--help)$/i.test(arg)) return { text: HELP_TEXT }
@@ -213,7 +241,7 @@ export const nowPane: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
-    const found = await read($, install)
+    const found = await ensureInstall($)
     const [state, key, cache, at] = await Promise.all([read($, now), read($, selected), read($, details), $.clock.now()])
     const inline = e.props.placement === 'inline'
     const columns = Math.max(20, e.props.bodyColumns || 60)
@@ -322,7 +350,7 @@ export const nowPane: Register = on => {
   // --- key chips in the transcript ----------------------------------------------
 
   on('ui.render', { component: ['AssistantMessage', 'UserMessage'] }, async ($, e, next) => {
-    const found = await read($, install)
+    const found = await ensureInstall($)
     if (!found) return next(e)
     const props = e.props as { text?: string; origin?: { kind?: string } }
     if (e.component === 'UserMessage' && props.origin?.kind !== 'composer') return next(e)

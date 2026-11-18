@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2
+
+- now-pane: the installation is discovered on demand from the session's cwd when `session.start` did not find it (cleared or resumed sessions, module reloads), instead of staying "no anthill installation in this session" for the whole session.
+
 ## 0.4.1
 
 - now-pane: the key-chip hover card opens above the chip row as an absolutely positioned box, so a reveal no longer pushes the neighbouring chips aside or scrolls the transcript; each card lights only for its own chip in its own message.
