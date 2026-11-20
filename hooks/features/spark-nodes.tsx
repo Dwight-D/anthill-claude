@@ -18,6 +18,9 @@ import {
 const RUN_TIMEOUT_MS = 10_000
 const MAX_SCAN_KEYS = 200
 const MAX_CONSECUTIVE_FAILURES = 3
+const UNPARSEABLE_BACKOFF_MS = 5 * 60_000
+// Spark E04 (spec-local-workspace.md) and the pre-existing missing-workspace message.
+const ABSENT_GLOBAL = /no global graph at|no Spark workspace at/i
 
 const status = atom({ plugin: 'anthill-claude', key: 'spark-status' } as const, 'unknown' as SparkStatus)
 const nodes = atom({ plugin: 'anthill-claude', key: 'spark-nodes' } as const, {} as Record<string, SparkNode>)
@@ -35,24 +38,35 @@ const log = ($: Dollar, line: string) => $.ui.log(line, { to: 'debug' })
 
 // Keys being fetched right now; one scan's batches run serially.
 const inFlight = new Set<string>()
-let failures = 0
+// Per-scope state (F-SPK-L08): consecutive failures, scopes switched off for the session, and
+// scopes backed off until a time after an unparseable answer. Scope "" is the global graph.
+const failures = new Map<string, number>()
+const scopeOff = new Set<string>()
+const backoff = new Map<string, number>()
 // The uuid of the last message a ranged read returned (a reload loses it).
 let lastSeenUuid: string | undefined
 
 const markUnavailable = ($: Dollar) => update($, status, () => 'unavailable' as SparkStatus)
 
-const countFailure = async ($: Dollar) => {
-  failures += 1
-  if (failures >= MAX_CONSECUTIVE_FAILURES) {
-    log($, `spark-nodes: ${failures} consecutive failures; the feature is off for this session`)
-    await markUnavailable($)
+const scopeName = (scope: string) => (scope === '' ? 'global' : scope)
+
+const countFailure = ($: Dollar, scope: string) => {
+  const n = (failures.get(scope) ?? 0) + 1
+  failures.set(scope, n)
+  if (n >= MAX_CONSECUTIVE_FAILURES && !scopeOff.has(scope)) {
+    scopeOff.add(scope)
+    log($, `spark-nodes: ${n} consecutive failures; ${scopeName(scope)} mentions are off for this session`)
   }
 }
 
 /** Fetches the title/type/summary of the mentioned keys that no cache holds. */
 const resolve = async ($: Dollar, keys: string[]) => {
   if ((await read($, status)) === 'unavailable') return
-  const pending = pendingKeys(keys, await read($, nodes), await read($, missing), inFlight)
+  const now = Date.now()
+  const pending = pendingKeys(keys, await read($, nodes), await read($, missing), inFlight).filter(k => {
+    const sc = refScope(k)
+    return !scopeOff.has(sc) && (backoff.get(sc) ?? 0) <= now
+  })
   if (pending.length === 0) return
   // Qualified refs resolve against the workspaces found from the session's directory (F-SPK-L01).
   const cwd = await $.session.cwd()
@@ -61,6 +75,8 @@ const resolve = async ($: Dollar, keys: string[]) => {
   try {
     for (const batch of groups) {
       if ((await read($, status)) === 'unavailable') return
+      const scope = refScope(batch[0] as string)
+      if (scopeOff.has(scope)) continue
       try {
         let out: { exitCode: number; stdout: string; stderr: string }
         try {
@@ -72,11 +88,11 @@ const resolve = async ($: Dollar, keys: string[]) => {
             return
           }
           log($, `spark-nodes: spark query failed: ${message(err)}`)
-          await countFailure($)
+          countFailure($, scope)
           return
         }
-        // A batch holds one scope (batches()); a workspace batch's failures never count (F-SPK-L05).
-        const qualified = refScope(batch[0] as string) !== ''
+        // A batch holds one scope (batches()); failures count per scope (F-SPK-L08).
+        const qualified = scope !== ''
         const first = out.stderr.trim().split('\n')[0] ?? ''
         if (out.exitCode !== 0) {
           if (qualified) {
@@ -86,13 +102,25 @@ const resolve = async ($: Dollar, keys: string[]) => {
             continue
           }
           log($, `spark-nodes: spark query → exit ${out.exitCode}: ${first}`)
-          await countFailure($)
+          if (ABSENT_GLOBAL.test(out.stderr)) {
+            // No global DB (Spark E04): global mentions are off; workspace lookups are unaffected.
+            scopeOff.add('')
+            await update($, missing, m => ({ ...m, ...Object.fromEntries(batch.map(k => [k, true as const])) }))
+            log($, 'spark-nodes: no global Spark graph; global mentions are off for this session')
+            continue
+          }
+          countFailure($, scope)
           continue
         }
         const parsed = parseNodeLines(out.stdout)
         if (!parsed.ok) {
           log($, 'spark-nodes: unparseable spark query output')
-          if (!qualified) await countFailure($)
+          if (qualified) {
+            // Back this workspace off so a broken one is not re-spawned on every scan (F-SPK-L08).
+            backoff.set(scope, Date.now() + UNPARSEABLE_BACKOFF_MS)
+          } else {
+            countFailure($, scope)
+          }
           continue
         }
         const found = new Set(parsed.nodes.map(n => n.key))
@@ -102,7 +130,8 @@ const resolve = async ($: Dollar, keys: string[]) => {
         await update($, nodes, n => ({ ...n, ...Object.fromEntries(got.map(g => [g.key, g])) }))
         await update($, missing, m => ({ ...m, ...Object.fromEntries(absent.map(k => [k, true as const])) }))
         await update($, status, () => 'ok' as SparkStatus)
-        failures = 0
+        failures.delete(scope)
+        backoff.delete(scope)
       } finally {
         for (const k of batch) inFlight.delete(k)
       }

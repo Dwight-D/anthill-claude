@@ -30,12 +30,16 @@ type Flags = {
   oldSpark: boolean
   /** Project keys whose qualified batches exit 1 as an ambiguous workspace. */
   ambiguous: string[]
+  /** Project keys whose qualified batches exit 0 with garbage. */
+  garbage: string[]
+  /** Global batches exit 1 as Spark E04 (no global DB). */
+  noGlobal: boolean
   /** The `cwd` each call carried. */
   cwds: unknown[]
 }
 
 const engine = (on: Parameters<TestBody>[1]): Flags => {
-  const flags: Flags = { calls: [], messages: [], missing: false, failing: false, oldSpark: false, ambiguous: [], cwds: [] }
+  const flags: Flags = { calls: [], messages: [], missing: false, failing: false, oldSpark: false, ambiguous: [], garbage: [], noGlobal: false, cwds: [] }
   mock.clock(on, { now: Date.parse('2026-11-20T12:00:00Z') })
   mock.store(on)
   on('process.run', (_, e) => {
@@ -48,7 +52,9 @@ const engine = (on: Parameters<TestBody>[1]): Flags => {
     const scope = keys.map(k => (k.includes('-') ? k.split('-')[0] : '')).find(() => true) as string
     if (wantsContent && flags.oldSpark) return out(1, '', 'spark: unknown field "content"')
     if (scope && flags.ambiguous.includes(scope)) return out(1, '', `spark: project key "${scope}" is ambiguous`)
-    if (flags.failing) return out(1, '', 'boom')
+    if (scope && flags.garbage.includes(scope)) return out(0, 'not json\n')
+    if (flags.noGlobal && !scope) return out(1, '', "spark: no global graph at ~/.spark/spark.db (bare key 2 refers to the global graph). Run 'spark init' to create it.")
+    if (flags.failing && !scope) return out(1, '', 'boom')
     const lines = keys.flatMap(k => {
       const n = NODES[k]
       if (!n) return []
@@ -317,5 +323,48 @@ test('bare [n] mentions produce no chips and no process call', async ($, on) => 
   expect(flags.calls.some(c => c[1] === 'query')).toBe(false)
   const ui = await message($, 'terminal', 'm1', 'see [2] and [3]')
   expect(await ui.findAll({ type: 'Button' })).toEqual([])
+  await ui.unmount()
+})
+
+const feed = async ($: Parameters<TestBody>[0], flags: Flags, tag: string, texts: string[]) => {
+  for (const [i, t] of texts.entries()) {
+    flags.messages = [...flags.messages, { role: 'assistant', text: t, uuid: `${tag}-${i}` }]
+    await complete($, `${tag}-${i}`)
+    await new Promise(r => setTimeout(r, 20))
+  }
+}
+const keysOf = (c: string[]) => c.flatMap((a, i) => (c[i - 1] === '--key' ? [a] : []))
+
+test('an unparseable workspace is backed off, not re-spawned, and never disables the feature', async ($, on) => {
+  const flags = engine(on)
+  flags.garbage = ['PAY']
+  await start($, flags, 'see ¤sp:PAY-3 and ¤sp:2')
+  const payCalls = () => flags.calls.filter(c => keysOf(c).some(k => k.startsWith('PAY'))).length
+  expect(payCalls()).toBe(1)
+  await feed($, flags, 'gb', ['¤sp:PAY-3', '¤sp:PAY-4', '¤sp:PAY-3 ¤sp:3'])
+  expect(payCalls()).toBe(1)
+  const ui = await message($, 'terminal', 'm1', 'see ¤sp:PAY-3 and ¤sp:2 and ¤sp:3')
+  expect((await ui.findAll({ type: 'Button' })).map(b => b.key)).toEqual(['spark-chip:2', 'spark-chip:3'])
+  await ui.unmount()
+})
+
+test('an absent global DB switches off only global mentions; workspace chips keep working', async ($, on) => {
+  const flags = engine(on)
+  flags.noGlobal = true
+  await start($, flags, 'see ¤sp:2 and ¤sp:PAY-3')
+  await feed($, flags, 'ng', ['¤sp:12', '¤sp:13', '¤sp:14', '¤sp:PAY-3 ¤sp:15'])
+  expect(flags.calls.filter(c => keysOf(c).some(k => !k.includes('-')))).toHaveLength(1)
+  const ui = await message($, 'terminal', 'm1', 'see ¤sp:PAY-3 and ¤sp:2')
+  expect((await ui.findAll({ type: 'Button' })).map(b => b.key)).toEqual(['spark-chip:PAY-3'])
+  await ui.unmount()
+})
+
+test('three global failures disable only the global scope, not workspace lookups', async ($, on) => {
+  const flags = engine(on)
+  flags.failing = true
+  await start($, flags, 'see ¤sp:2')
+  await feed($, flags, 'gf', ['¤sp:12', '¤sp:13', '¤sp:14', '¤sp:PAY-3'])
+  const ui = await message($, 'terminal', 'm1', 'see ¤sp:PAY-3')
+  expect((await ui.findAll({ type: 'Button' })).map(b => b.key)).toEqual(['spark-chip:PAY-3'])
   await ui.unmount()
 })

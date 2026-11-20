@@ -635,6 +635,28 @@ rejection changes the failure count or `spark-status`. A Spark without
 local-workspace support, or one broken repository workspace, therefore never
 disables the feature globally — global chips keep working.
 
+**F-SPK-L08 — Per-scope failure handling and backoff (amends F-SPK-F02, F-SPK-L05)**
+Failure state is kept **per scope** (module-level; scope `""` is the global graph,
+otherwise the project key), never feature-wide:
+- Consecutive failures (rejection other than spawn failure, exit ≠ 0, or — for the
+  global scope only — unparseable output) are counted per scope. After 3 in one
+  scope, that scope is **off** for the session: its pending refs are skipped and
+  it spawns nothing more; one debug line names the scope. Other scopes are
+  unaffected, and `spark-status` is **not** set to `'unavailable'` by this
+  (only a spawn failure, F-SPK-F02, does that). A success in a scope resets that
+  scope's count. Qualified batches keep F-SPK-L05's rule that exit ≠ 0 and
+  unparseable output are not counted (a rejection is).
+- **Absent global DB:** a global batch with exit ≠ 0 whose stderr contains
+  `no global graph at` (Spark E04, spec-local-workspace.md; also the older
+  `no Spark workspace at`) switches the global scope off at once, negatively
+  caches that batch's refs, and writes one debug line. Workspace lookups continue
+  (a developer with only a repository `.spark/` keeps working chips).
+- **Unparseable workspace output:** a qualified batch with exit 0 and
+  `{ ok: false }` backs that project key off for 5 minutes (module-level
+  timestamp); refs of that scope are skipped by the resolver meanwhile, so a
+  broken workspace is not re-spawned on every scan. They are still not cached
+  and not counted; a later successful answer clears the backoff.
+
 **F-SPK-L06 — Requires**
 Qualified chips need Spark with capability `local-workspaces` (Spark
 F-LWS-J02); global chips keep working with any Spark that has `query-fields`
@@ -649,6 +671,10 @@ F-LWS-J02); global chips keep working with any Spark that has `query-fields`
   `{"key":12,…}` (→ `"12"`); a batch holding both `{"key":3,"scope":"PAY","ref":"PAY-3"}`
   and `{"key":3,"scope":"","ref":"3"}` yields two distinct nodes; `{"key":3,"ref":"x"}`,
   `{"key":"3","ref":"3"}` and `{"key":3,"scope":"OPS","ref":"PAY-3"}` → `{ ok: false }`.
+- Engine (F-SPK-L08): an unparseable `PAY` batch is spawned once across several
+  scans while global chips still show; an E04 global answer spawns one global
+  call, then only workspace calls, and `[PAY-3]` still shows; three failing
+  global batches do not stop a later `PAY-3` lookup.
 - Engine: every `process.run` call carries `cwd` equal to the session cwd; a
   message with `¤sp:PAY-3 and ¤sp:12` makes two calls (one per scope) and shows
   chips `[PAY-3]` and `[12]`; a qualified batch exiting 1 with
