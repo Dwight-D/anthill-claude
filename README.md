@@ -8,6 +8,7 @@ Claude Code mods (a Claude Code plugin) for Anthill sessions: UI, hooks, and oth
 - **language-sanitization** — rewrites wording that can trip model safeguards before it leaves the session, and shows a toast for each rewrite (see below).
 - **session-correlation** — records which Claude Code session (and subagent) works which backlog item in the anthill sessions ledger (see below).
 - **now-pane** — a docked "Anthill" pane listing the installation's active and validation backlog items, key chips under transcript rows that mention an item (`ANT-74`), a detail view, a status-line count and the `/ant` command (see below).
+- **spark-nodes** — chips under messages that mention a Spark node as `[n]`; pressing one opens a box with the node's title, type and summary, and "Show content" fetches the full content on demand (see below). Colors come from `hooks/theme.ts`.
 
 ### language-sanitization
 
@@ -80,6 +81,8 @@ Keys are matched case-sensitively and bound to the installation's prefix (`\bANT
 
 Refresh: on session start, after each turn of the main session, and after every `anthill backlog claim|deliver|close|block|release|new|triage|approve|renumber|set` run through the Bash or PowerShell tool. At most one refresh runs at a time; a trigger during one schedules one more. A failed command keeps the last good state and logs to the debug log. The pane opens by itself after the first refresh that finds an active or validation item (an unasked pane waits unplaced on a terminal narrower than 144 columns); `/ant` opens it at any width.
 
+Its colors are hardcoded (`green`, `yellow`, `red`, `cyan`); they are not yet on the theme module `hooks/theme.ts` the Spark chips use. Migrating them is a follow-up.
+
 Read-only in this version: the controller verbs (done / reject / release) stay in the TUI Now mode. The extension point is marked in `now-pane.tsx` (`DetailButtons`).
 
 Files:
@@ -93,6 +96,36 @@ Files:
 - `tests/now-pane.test.tsx` — the pane, chips and `/ant` through the engine's own test kit (`claude plugin test .`), with the CLI stubbed.
 
 Check it: open a session in an anthill installation with the plugin loaded, mention `ANT-1` in a prompt and see the chip under it; `/ant` opens the pane; `/ant 1` opens the item's detail.
+
+### Spark node chips
+
+When a conversation message mentions a Spark node by its display form `[n]`, a chip for it appears under the message, the way key chips do for Anthill items. Pressing a chip opens an in-flow box with the node's title, type and summary; a "Show content" button in the box fetches and shows the full content, never by default. Needs `spark` on PATH with `query-fields` (and `node-content` for "Show content"). Without `spark` the feature is inert: no chips, no toast, one debug-log line.
+
+What it shows:
+
+| Surface | What | Source |
+| --- | --- | --- |
+| Chip row | Under each assistant reply and each composer prompt: one button per distinct mentioned node that Spark knows, `[n] <title, 32 chars> ▸` (`▾` while its box is open). Mouse-only, like the Anthill chips. | the session cache; no process call per row |
+| Info box | Pressing a chip opens a bordered box under the message: `[n]`, the full title, `· type` when set, the summary when set, and a `Show content` / `Hide content` button. One box per message; pressing the chip again closes it; the same node in another message is independent. | the session cache |
+| Content | `Show content` fetches once and shows the first 60 lines / 4000 characters as plain text (a `… k more lines — spark show --peek n` line when cut). Failures say so in words: `Content unavailable: this spark has no node-content (update spark).`, `Content could not be loaded…`, `[n] no longer exists in Spark.` | `spark query --json --all --fields key,title,type,summary,content --key n` |
+
+Mention rules: `[` + a positive integer (no leading zero, at most 9 digits) + `]`, outside code (fenced blocks and inline spans are ignored), not a link (`[1](…)`, `[1]: …`, `[text][1]`, `[1][ref]`), not an image, wiki link, footnote or checkbox, and not directly after a letter, digit or `_` (`arr[1]`). At most 12 distinct keys per message. See `docs/specs/spec-spark-nodes.md` §2.
+
+Data: scans run on session start (the last 200 messages), after each main-loop turn (the new messages) and on each composer prompt, and resolve unknown keys in batches of up to 50 with `spark query --json --all --fields key,title,type,summary --key n …` (serial, 10 s timeout, no `--db`: the database is whatever the Claude Code process inherits). It never runs `spark show` (an access event) or a write command. Found nodes and keys Spark does not know are cached for the session. If `spark` cannot be started the feature switches itself off; so does a third consecutive failed query.
+
+Colors: every color goes through `hooks/theme.ts` (roles mapped to the person's Claude Code theme keys, high contrast, no dimmed text); open/closed is told by `▸`/`▾`, emphasis by bold, failures by words.
+
+Files:
+
+- `hooks/features/spark-nodes/mentions.ts` — mention detection with code masking (pure).
+- `hooks/features/spark-nodes/model.ts` — argv, JSON Lines parsing, cache bookkeeping, content cut, chip label (pure).
+- `hooks/features/spark-nodes.tsx` — atoms, triggers, resolver, content fetch, the chips and the box.
+- `hooks/theme.ts` — the one map from color roles to theme keys.
+- `types/index.d.ts` — the `$.state` contract (`spark-status`, `spark-nodes`, `spark-missing`, `spark-content`, `spark-open`, `spark-expanded`).
+- `tests/spark-nodes-mentions.spec.mjs`, `tests/spark-nodes-model.spec.mjs`, `tests/theme.spec.mjs` — the pure helpers and the theme rules, against `tests/fixtures/spark-nodes/*.jsonl`.
+- `tests/spark-nodes.test.tsx` — the chips and box through the engine's test kit, with `spark` stubbed.
+
+Check it: with `spark` on PATH and a node `[n]`, write `[n]` in a prompt and see the chip under it; press it for the box; press Show content.
 
 ## Install
 

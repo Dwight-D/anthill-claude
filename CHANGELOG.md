@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0
+
+- spark-nodes: chips under assistant replies and composer prompts for Spark nodes mentioned as `[n]` (outside code, not links, footnotes or indexes); pressing a chip opens a box with the node's title, type and summary; "Show content" fetches the full content on demand. Data from `spark query --json --all --fields …` (batched, non-mutating; never `spark show`). Inert when `spark` is not on PATH. Needs `spark` with `query-fields`; "Show content" needs `node-content` (spark spec-json-output.md F-JSON-R07).
+- theme: `hooks/theme.ts`, one map from semantic roles to theme keys; the Spark chips use it. The Now pane's hardcoded colors are not migrated yet (follow-up).
+
 ## 0.4.2
 
 - now-pane: the installation is discovered on demand from the session's cwd when `session.start` did not find it (cleared or resumed sessions, module reloads), instead of staying "no anthill installation in this session" for the whole session.

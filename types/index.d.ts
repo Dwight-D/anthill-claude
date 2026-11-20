@@ -1,7 +1,8 @@
 // The plugin's `$.state` contract: every value the hooks module keeps under
 // the plugin's name, read by `claude plugin validate` against the module's
 // `$.state` keys. Named from .claude-plugin/plugin.json `types`. Self-contained
-// (no imports): hooks/features/now-pane/model.ts imports these types from here.
+// (no imports): hooks/features/now-pane/model.ts and
+// hooks/features/spark-nodes/model.ts import these types from here.
 
 /** The anthill installation the session runs in: its root and key prefix. */
 export type Install = { root: string; prefix: string }
@@ -66,6 +67,20 @@ export type Detail = {
   log: string[]
 }
 
+/** One node as `spark query --json --fields key,title,type,summary` prints it. */
+export type SparkNode = { key: number; title: string; type: string | null; summary: string }
+
+/** The lazily fetched content of one node. */
+export type SparkContent =
+  | { state: 'loading' }
+  | { state: 'ok'; content: string | null }
+  | { state: 'unsupported' }
+  | { state: 'failed' }
+  | { state: 'gone' }
+
+/** Whether the spark CLI answered this session. */
+export type SparkStatus = 'unknown' | 'ok' | 'unavailable'
+
 declare module 'claude-code' {
   interface PluginState {
     'anthill-claude': {
@@ -77,6 +92,18 @@ declare module 'claude-code' {
       'now-selected': string | null
       /** `show --json` details by key, cached until the next refresh. */
       'now-details': Record<string, Detail>
+      /** Whether the spark CLI answered this session. */
+      'spark-status': SparkStatus
+      /** Positive cache of Spark nodes by decimal key. */
+      'spark-nodes': Record<string, SparkNode>
+      /** Negative cache: keys a successful query did not return. */
+      'spark-missing': Record<string, true>
+      /** Lazily fetched node content by decimal key. */
+      'spark-content': Record<string, SparkContent>
+      /** Message site → the key whose info box is open. */
+      'spark-open': Record<string, number>
+      /** Message site → the key whose content shows. */
+      'spark-expanded': Record<string, number>
     }
   }
 }
