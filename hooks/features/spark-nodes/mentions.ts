@@ -1,6 +1,8 @@
-// Spark node mentions (`[12]`) in message text. Pure: no Claude or Node
+// Spark node mentions (`¤sp:12`) in message text. Pure: no Claude or Node
 // imports, so it runs under the engine and under `node --test` alike.
-// Spec: docs/specs/spec-spark-nodes.md §2 (F-SPK-M01…M04).
+// Spec: docs/specs/spec-spark-nodes.md §2 (F-SPK-M01…M04), docs/specs/spec-mentions.md.
+
+import { namespacedPattern } from '../../mentions.ts'
 
 export const MAX_KEYS_PER_MESSAGE = 12
 
@@ -76,7 +78,7 @@ export const maskCode = (text: string): string => {
   return out.join('\n')
 }
 
-const MENTION = /(?<![\p{L}\p{N}_\]\[!])\[([1-9][0-9]{0,8})\](?![(:\[])/gu
+const MENTION = namespacedPattern('spark', '[1-9][0-9]{0,8}')
 
 /** Distinct mentioned keys, first-appearance order, at most MAX_KEYS_PER_MESSAGE. */
 export const extractMentions = (text: string): number[] => {

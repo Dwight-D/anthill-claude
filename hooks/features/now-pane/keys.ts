@@ -1,12 +1,15 @@
 // Item keys (`ANT-74`): the installation prefix, a hyphen, a positive integer.
 // Pure: no Claude or Node imports, so it runs under the engine and under
-// `node --test` alike. Contract: anthill-cli/docs/ITEM_KEYS_SPEC.md §1.
+// `node --test` alike (the one import is explicit-extension so both load it).
+// Mentions: docs/specs/spec-mentions.md F-MEN-05. Contract: anthill-cli/docs/ITEM_KEYS_SPEC.md §1.
 
 /** A prefix is 2 to 5 uppercase ASCII letters. */
 export const PREFIX = /^[A-Z]{2,5}$/
 
 /** A canonical key: `ANT-74`. */
 export const CANONICAL = /^[A-Z]{2,5}-[1-9][0-9]*$/
+
+import { SIGIL, programFor } from '../../mentions.ts'
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
@@ -18,6 +21,14 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 export const keyPattern = (prefix: string): RegExp | null =>
   PREFIX.test(prefix) ? new RegExp(`\\b${escape(prefix)}-[1-9][0-9]*\\b`, 'g') : null
 
+const PRECEDING = new RegExp(`${SIGIL}([\\p{L}\\p{N}_-]+):$`, 'u')
+
+/** True when the match at `index` is immediately preceded by `¤<name>:` for a non-anthill name (F-MEN-05). */
+const foreignNamespace = (text: string, index: number): boolean => {
+  const m = PRECEDING.exec(text.slice(Math.max(0, index - 64), index))
+  return !!m && programFor(m[1] as string) !== 'anthill'
+}
+
 /** Distinct keys mentioned in `text`, in order of first appearance. */
 export const extractKeys = (text: string, prefix: string): string[] => {
   const re = keyPattern(prefix)
@@ -25,6 +36,7 @@ export const extractKeys = (text: string, prefix: string): string[] => {
   const seen = new Set<string>()
   const out: string[] = []
   for (const m of text.matchAll(re)) {
+    if (foreignNamespace(text, m.index ?? 0)) continue
     if (!seen.has(m[0])) {
       seen.add(m[0])
       out.push(m[0])
@@ -45,6 +57,12 @@ export const parseKeyArg = (arg: string, prefix: string): string | null => {
   const s = (arg ?? '').trim()
   if (!PREFIX.test(prefix) || !s) return null
   if (/^[1-9][0-9]*$/.test(s)) return `${prefix}-${s}`
+  const ns = new RegExp(`^${SIGIL}([A-Za-z]+):(.+)$`, 'u').exec(s)
+  if (ns) {
+    if (programFor(ns[1] as string) !== 'anthill') return null
+    const k = ns[2] as string
+    return CANONICAL.test(k) && k.startsWith(`${prefix}-`) ? k : null
+  }
   const m = /^([A-Za-z]{2,5})-([1-9][0-9]*)$/.exec(s)
   if (m && m[1] && m[1].toUpperCase() === prefix) return `${prefix}-${m[2]}`
   return null

@@ -1,7 +1,7 @@
 {
   "name": "anthill-claude",
   "version": "0.5.0",
-  "description": "Claude Code mods for Anthill sessions: UI, hooks, and other Claude-side behavior. Currently: message timestamps, language sanitization, session-to-item correlation, the Now pane with key chips and /ant, Spark node chips for [n] mentions.",
+  "description": "Claude Code mods for Anthill sessions: UI, hooks, and other Claude-side behavior. Currently: message timestamps, language sanitization, session-to-item correlation, the Now pane with key chips and /ant, Spark node chips for ¤sp:n mentions.",
   "author": {
     "name": "Max"
   },

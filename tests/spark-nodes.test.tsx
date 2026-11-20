@@ -70,7 +70,7 @@ const engine = (on: Parameters<TestBody>[1]): Flags => {
 const complete = ($: Parameters<TestBody>[0], id: string) =>
   $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: id, reason: 'answer' })
 
-const start = async ($: Parameters<TestBody>[0], flags: Flags, text = 'see [2] and [3] but not arr[1] or [99]') => {
+const start = async ($: Parameters<TestBody>[0], flags: Flags, text = 'see ¤sp:2 and ¤sp:3 but not arr[1] or ¤sp:99 or [5]') => {
   flags.messages = [{ role: 'assistant', text, uuid: `u-${flags.calls.length}-${text.length}` }]
   await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
   await complete($, 't1')
@@ -96,7 +96,7 @@ const message = (
     props: component === 'AssistantMessage' ? { text, isFirstOfReply: true } : { text, origin: { kind: origin }, isExpanded: false },
   } as never)
 
-const TEXT = 'see [2] and [3] but not arr[1] or [99]'
+const TEXT = 'see ¤sp:2 and ¤sp:3 but not arr[1] or ¤sp:99 or [5]'
 
 for (const surface of ['terminal', 'desktop'] as const) {
   test(`chips are batched, cached and never use show (${surface})`, async ($, on) => {
@@ -159,7 +159,7 @@ test('a later turn mentioning known or missing keys makes no new call', async ($
   const flags = engine(on)
   await start($, flags)
   const before = flags.calls.length
-  flags.messages = [{ role: 'assistant', text: 'again [99] and [2]', uuid: 'u-later' }]
+  flags.messages = [{ role: 'assistant', text: 'again ¤sp:99 and ¤sp:2', uuid: 'u-later' }]
   await complete($, 't2')
   await new Promise(r => setTimeout(r, 20))
   expect(flags.calls.length).toBe(before)
@@ -195,7 +195,7 @@ test('the same key in two messages opens independently', async ($, on) => {
   const flags = engine(on)
   await start($, flags)
   const a = await message($, 'terminal', 'm1', TEXT)
-  const b = await message($, 'terminal', 'm2', 'and again [2]')
+  const b = await message($, 'terminal', 'm2', 'and again ¤sp:2')
   await a.press({ key: 'spark-chip:2' })
   expect(await a.find({ key: 'spark-info' })).toBeDefined()
   expect(await b.find({ key: 'spark-info' })).toBeUndefined()
@@ -216,7 +216,7 @@ test('a rejecting process.run leaves the feature inert and stops spawning', asyn
   expect((await ui.find({ type: 'Text', text: /engine row/ }))?.text).toBe('engine row')
   await ui.unmount()
   for (const id of ['u-new-1', 'u-new-2', 'u-new-3', 'u-new-4']) {
-    flags.messages = [...flags.messages, { role: 'assistant', text: 'new [7]', uuid: id }]
+    flags.messages = [...flags.messages, { role: 'assistant', text: 'new ¤sp:7', uuid: id }]
     await complete($, id)
     await new Promise(r => setTimeout(r, 20))
   }
@@ -249,10 +249,19 @@ test('a failing query is not cached, is retried, and stops after three failures'
 test('a user message gets chips only from the composer', async ($, on) => {
   const flags = engine(on)
   await start($, flags)
-  const mine = await message($, 'terminal', 'u1', 'look at [2]', 'UserMessage', 'composer')
+  const mine = await message($, 'terminal', 'u1', 'look at ¤sp:2', 'UserMessage', 'composer')
   expect((await mine.findAll({ type: 'Button' })).map(b => b.key)).toEqual(['spark-chip:2'])
   await mine.unmount()
-  const other = await message($, 'terminal', 'u2', 'look at [2]', 'UserMessage', 'task-notification')
+  const other = await message($, 'terminal', 'u2', 'look at ¤sp:2', 'UserMessage', 'task-notification')
   expect(await other.findAll({ type: 'Button' })).toHaveLength(0)
   await other.unmount()
+})
+
+test('bare [n] mentions produce no chips and no process call', async ($, on) => {
+  const flags = engine(on)
+  await start($, flags, 'see [2] and [3] and arr[1]')
+  expect(flags.calls.some(c => c[1] === 'query')).toBe(false)
+  const ui = await message($, 'terminal', 'm1', 'see [2] and [3]')
+  expect(await ui.findAll({ type: 'Button' })).toEqual([])
+  await ui.unmount()
 })
