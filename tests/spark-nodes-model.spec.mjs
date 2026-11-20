@@ -10,22 +10,29 @@ import {
 const fixture = name => readFileSync(new URL(`./fixtures/spark-nodes/${name}`, import.meta.url), 'utf8')
 
 test('argv shapes', () => {
-  assert.deepEqual(infoArgv([12, 40]), ['spark', 'query', '--json', '--all', '--fields', 'key,title,type,summary', '--key', '12', '--key', '40'])
-  assert.deepEqual(contentArgv(12), ['spark', 'query', '--json', '--all', '--fields', 'key,title,type,summary,content', '--key', '12'])
+  assert.deepEqual(infoArgv(['PAY-12', '12']), ['spark', 'query', '--json', '--all', '--fields', 'key,scope,ref,title,type,summary', '--key', 'PAY-12', '--key', '12'])
+  assert.deepEqual(contentArgv('PAY-12'), ['spark', 'query', '--json', '--all', '--fields', 'key,scope,ref,title,type,summary,content', '--key', 'PAY-12'])
+  assert.deepEqual(contentArgv('12'), ['spark', 'query', '--json', '--all', '--fields', 'key,scope,ref,title,type,summary,content', '--key', '12'])
 })
 
 test('batches', () => {
-  const ks = n => Array.from({ length: n }, (_, i) => i + 1)
+  const ks = n => Array.from({ length: n }, (_, i) => String(i + 1))
   assert.deepEqual(batches([]), [])
   assert.deepEqual(batches(ks(1)).map(b => b.length), [1])
   assert.deepEqual(batches(ks(50)).map(b => b.length), [50])
   assert.deepEqual(batches(ks(51)).map(b => b.length), [50, 1])
   assert.deepEqual(batches(ks(120)).map(b => b.length), [50, 50, 20])
-  assert.deepEqual(batches([1, 2, 3], 2), [[1, 2], [3]])
+  assert.deepEqual(batches(['1', '2', '3'], 2), [['1', '2'], ['3']])
+})
+
+test('batches group by scope, first appearance, then chunk', () => {
+  assert.deepEqual(batches(['12', 'PAY-1', '40', 'OPS-2', 'PAY-3']), [['12', '40'], ['PAY-1', 'PAY-3'], ['OPS-2']])
+  assert.deepEqual(batches(['PAY-1', '12', 'PAY-2', 'PAY-3'], 2), [['PAY-1', 'PAY-2'], ['PAY-3'], ['12']])
 })
 
 test('pendingKeys excludes cached, missing and in-flight; keeps order; de-duplicates', () => {
-  assert.deepEqual(pendingKeys([5, 1, 2, 3, 4, 5, 1], { 1: {} }, { 2: true }, new Set([3])), [5, 4])
+  assert.deepEqual(pendingKeys(['5', '1', '2', '3', 'PAY-4', '5', '1'], { 1: {} }, { 2: true }, new Set(['3'])), ['5', 'PAY-4'])
+  assert.deepEqual(pendingKeys(['PAY-1', '1'], { 'PAY-1': {} }, {}, new Set()), ['1'])
   assert.deepEqual(pendingKeys([], {}, {}, new Set()), [])
 })
 
@@ -33,9 +40,9 @@ test('parseNodeLines: info fixture', () => {
   const r = parseNodeLines(fixture('info.jsonl'))
   assert.equal(r.ok, true)
   assert.deepEqual(r.nodes, [
-    { key: 1, title: 'Me', type: null, summary: '' },
-    { key: 2, title: 'Payments API', type: 'component', summary: 'Handles card payments' },
-    { key: 3, title: 'Card vault', type: null, summary: '' },
+    { key: '1', title: 'Me', type: null, summary: '' },
+    { key: '2', title: 'Payments API', type: 'component', summary: 'Handles card payments' },
+    { key: '3', title: 'Card vault', type: null, summary: '' },
   ])
   assert.deepEqual(r.contents, {})
 })
@@ -48,7 +55,7 @@ test('parseNodeLines: content fixture', () => {
 
 test('parseNodeLines: unknown properties are ignored', () => {
   const r = parseNodeLines(fixture('unknown-fields.jsonl'))
-  assert.deepEqual(r, { ok: true, nodes: [{ key: 2, title: 'Payments API', type: 'component', summary: 'Handles card payments' }], contents: {} })
+  assert.deepEqual(r, { ok: true, nodes: [{ key: '2', title: 'Payments API', type: 'component', summary: 'Handles card payments' }], contents: {} })
 })
 
 test('parseNodeLines: empty and blank lines', () => {
@@ -63,7 +70,32 @@ test('parseNodeLines: corrupt answers are not ok', () => {
 
 test('parseNodeLines: type and summary coercion', () => {
   const r = parseNodeLines('{"key":1,"title":"a","type":5}')
-  assert.deepEqual(r.nodes[0], { key: 1, title: 'a', type: null, summary: '' })
+  assert.deepEqual(r.nodes[0], { key: '1', title: 'a', type: null, summary: '' })
+})
+
+const line = o => JSON.stringify({ title: 'T', type: null, summary: '', ...o })
+
+test('parseNodeLines: identity is ref; old Spark falls back to key', () => {
+  const pay = parseNodeLines(line({ key: 3, scope: 'PAY', ref: 'PAY-3' }))
+  assert.deepEqual(pay.nodes.map(n => n.key), ['PAY-3'])
+  assert.deepEqual(parseNodeLines(line({ key: 12, scope: '', ref: '12' })).nodes.map(n => n.key), ['12'])
+  assert.deepEqual(parseNodeLines(line({ key: 12 })).nodes.map(n => n.key), ['12'])
+  assert.deepEqual(parseNodeLines(line({ key: 3, scope: 'pay', ref: 'pay-3' })).ok, false) // scope must equal the canonical prefix
+  assert.deepEqual(parseNodeLines(line({ key: 3, ref: 'pay-3' })).nodes.map(n => n.key), ['PAY-3'])
+})
+
+test('parseNodeLines: the same key in two scopes is two nodes; contents keyed by ref', () => {
+  const r = parseNodeLines([line({ key: 3, scope: 'PAY', ref: 'PAY-3', content: 'a' }), line({ key: 3, scope: '', ref: '3', content: 'b' })].join('\n'))
+  assert.equal(r.ok, true)
+  assert.deepEqual(r.nodes.map(n => n.key), ['PAY-3', '3'])
+  assert.deepEqual(r.contents, { 'PAY-3': 'a', 3: 'b' })
+})
+
+test('parseNodeLines: bad ref, bad key or disagreeing scope fail the batch', () => {
+  for (const o of [
+    { key: 3, ref: 'x' }, { key: 3, ref: null }, { key: '3', ref: '3' }, { key: 3, scope: 'OPS', ref: 'PAY-3' },
+    { key: 3, scope: 'PAY', ref: '3' }, { key: 3, scope: 'PAY' }, { key: 0, ref: '3' },
+  ]) assert.deepEqual(parseNodeLines(line(o)), { ok: false }, JSON.stringify(o))
 })
 
 test('contentView cuts at 60 lines / 4000 characters', () => {
@@ -85,10 +117,12 @@ test('contentView cuts at 60 lines / 4000 characters', () => {
 })
 
 test('chip label truncates the title at 32', () => {
-  assert.equal(chipLabel(2, 'Payments API'), '[2] Payments API')
-  assert.equal(chipLabel(2, 'a'.repeat(40)), `[2] ${'a'.repeat(31)}…`)
-  assert.equal(chipLabel(2, 'a  b\n c'), '[2] a b c')
+  assert.equal(chipLabel('2', 'Payments API'), '[2] Payments API')
+  assert.equal(chipLabel('2', 'a'.repeat(40)), `[2] ${'a'.repeat(31)}…`)
+  assert.equal(chipLabel('2', 'a  b\n c'), '[2] a b c')
 })
+
+test('chip label shows a qualified ref', () => assert.equal(chipLabel('PAY-3', 'Vault'), '[PAY-3] Vault'))
 
 test('spawn failures are told from other rejections', () => {
   assert.equal(isSpawnFailure(new Error('spawn spark ENOENT')), true)

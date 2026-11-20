@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- spark-nodes: qualified Spark keys for local workspaces (`¤sp:PAY-12`; prefix any case, stored uppercase). Nodes are identified by the `ref` string from `spark query` (fields now `key,scope,ref,…`), falling back to the integer `key` when `ref` is absent (older Spark); a batch whose `scope` and `ref` disagree is rejected. Every `spark` call runs with the session's cwd; lookups are batched per scope; a failing workspace batch (ambiguous project key, Spark without `local-workspaces`) is negatively cached and does not count toward turning the feature off. State keys (`spark-nodes`, `spark-open`, …) are ref strings; `SparkNode.key` is a string. Spec `docs/specs/spec-spark-nodes.md` §11. Failure handling is per scope (F-SPK-L08): three failures switch off only that scope; an absent global DB (Spark E04) switches off only global mentions, so workspace chips keep working; a workspace answering with unparseable output is backed off for 5 minutes instead of being re-spawned on every scan.
+
 ## 0.5.0
 
 - spark-nodes: chips under assistant replies and composer prompts for Spark nodes mentioned as `¤sp:n` / `¤spark:n` (`¤` is U+00A4; outside code; the bare `[n]` form is no longer detected); pressing a chip opens a box with the node's title, type and summary; "Show content" fetches the full content on demand. Data from `spark query --json --all --fields …` (batched, non-mutating; never `spark show`). Inert when `spark` is not on PATH. Needs `spark` with `query-fields`; "Show content" needs `node-content` (spark spec-json-output.md F-JSON-R07).

@@ -2,21 +2,23 @@
 // Pure: no Claude or Node imports, so it runs under the engine and under
 // `node --test` alike. Spec: docs/specs/spec-spark-nodes.md §3 and §5.
 import type { SparkNode } from '../../../types'
+import { canonicalRef, refScope } from './mentions.ts'
 
 export const MAX_KEYS_PER_BATCH = 50
-export const INFO_FIELDS = 'key,title,type,summary'
-export const CONTENT_FIELDS = 'key,title,type,summary,content'
+export const INFO_FIELDS = 'key,scope,ref,title,type,summary'
+export const CONTENT_FIELDS = 'key,scope,ref,title,type,summary,content'
 export const CHIP_TITLE_MAX = 32
 export const CONTENT_MAX_LINES = 60
 export const CONTENT_MAX_CHARS = 4000
 
 // `--all`: without it `spark query` leaves out domain types (todos).
-export const infoArgv = (keys: number[]): string[] => [
-  'spark', 'query', '--json', '--all', '--fields', INFO_FIELDS, ...keys.flatMap(k => ['--key', String(k)]),
+// Refs are canonical strings (`12`, `PAY-12`); the plugin never passes `--global`.
+export const infoArgv = (keys: string[]): string[] => [
+  'spark', 'query', '--json', '--all', '--fields', INFO_FIELDS, ...keys.flatMap(k => ['--key', k]),
 ]
 
-export const contentArgv = (key: number): string[] => [
-  'spark', 'query', '--json', '--all', '--fields', CONTENT_FIELDS, '--key', String(key),
+export const contentArgv = (ref: string): string[] => [
+  'spark', 'query', '--json', '--all', '--fields', CONTENT_FIELDS, '--key', ref,
 ]
 
 export type ParsedBatch =
@@ -37,38 +39,62 @@ export const parseNodeLines = (stdout: string): ParsedBatch => {
     if (!v || typeof v !== 'object' || Array.isArray(v)) return { ok: false }
     const o = v as Record<string, unknown>
     if (typeof o.key !== 'number' || !Number.isSafeInteger(o.key) || o.key <= 0 || typeof o.title !== 'string') return { ok: false }
+    // Identity is `ref` (F-SPK-L04); `key` is only the number within its scope. An
+    // old Spark (no `ref`, no local workspaces) has only global keys.
+    let ref: string | null
+    if ('ref' in o) {
+      ref = canonicalRef(o.ref)
+      if (ref === null) return { ok: false }
+      if (typeof o.scope === 'string' && o.scope !== refScope(ref)) return { ok: false }
+    } else {
+      if (typeof o.scope === 'string' && o.scope !== '') return { ok: false } // a workspace node must carry its ref
+      ref = canonicalRef(String(o.key))
+      if (ref === null) return { ok: false }
+    }
     nodes.push({
-      key: o.key,
+      key: ref,
       title: o.title,
       type: typeof o.type === 'string' ? o.type : null,
       summary: typeof o.summary === 'string' ? o.summary : '',
     })
-    if ('content' in o) contents[String(o.key)] = typeof o.content === 'string' && o.content !== '' ? o.content : null
+    if ('content' in o) contents[ref] = typeof o.content === 'string' && o.content !== '' ? o.content : null
   }
   return { ok: true, nodes, contents }
 }
 
 /** `mentioned` (order kept, de-duplicated) minus keys cached either way or in flight. */
 export const pendingKeys = (
-  mentioned: number[],
+  mentioned: string[],
   nodes: Record<string, unknown>,
   missing: Record<string, unknown>,
-  inFlight: ReadonlySet<number>,
-): number[] => {
-  const seen = new Set<number>()
-  const out: number[] = []
+  inFlight: ReadonlySet<string>,
+): string[] => {
+  const seen = new Set<string>()
+  const out: string[] = []
   for (const k of mentioned) {
     if (seen.has(k)) continue
     seen.add(k)
-    if (String(k) in nodes || String(k) in missing || inFlight.has(k)) continue
+    if (k in nodes || k in missing || inFlight.has(k)) continue
     out.push(k)
   }
   return out
 }
 
-export const batches = (keys: number[], size = MAX_KEYS_PER_BATCH): number[][] => {
-  const out: number[][] = []
-  for (let i = 0; i < keys.length; i += size) out.push(keys.slice(i, i + size))
+/**
+ * Refs grouped by scope (the global group is the bare refs; each project key is
+ * its own group; groups in first-appearance order), each chunked at `size`.
+ * One batch never mixes graphs (F-SPK-L03).
+ */
+export const batches = (keys: string[], size = MAX_KEYS_PER_BATCH): string[][] => {
+  const groups = new Map<string, string[]>()
+  for (const k of keys) {
+    const scope = refScope(k)
+    const g = groups.get(scope)
+    if (g) g.push(k)
+    else groups.set(scope, [k])
+  }
+  const out: string[][] = []
+  for (const g of groups.values()) for (let i = 0; i < g.length; i += size) out.push(g.slice(i, i + size))
   return out
 }
 
@@ -87,7 +113,7 @@ export const truncate = (s: string, n: number): string => {
 }
 
 /** The chip's accessible name: `[12] Payments API`. */
-export const chipLabel = (key: number, title: string): string => `[${key}] ${truncate(title, CHIP_TITLE_MAX)}`
+export const chipLabel = (key: string, title: string): string => `[${key}] ${truncate(title, CHIP_TITLE_MAX)}`
 
 /**
  * The first 60 lines / 4000 characters of `content`, whichever cuts first;
