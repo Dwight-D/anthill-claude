@@ -88,38 +88,12 @@ list continuations without a full markdown parser).
 Because masked characters are word characters, a `[n]` that touches code on
 its left (`` `arr`[1] ``) is rejected by F-SPK-M03.
 
-**F-SPK-M03 — The mention pattern**
-On the masked text, a mention is `[` + key + `]` where:
-- key is `[1-9][0-9]{0,8}` (positive, no leading zero, at most 9 digits);
-- the character before `[` is **not** a Unicode letter, number or `_`
-  (`[\p{L}\p{N}_]`), nor `]`, `[` or `!`; start of text is allowed;
-- the character after `]` is **not** `(`, `:` or `[`; end of text is allowed.
-
-Equivalent JavaScript (normative intent; an implementation may differ if it
-passes the F-SPK-T01 cases):
-```js
-/(?<![\p{L}\p{N}_\]\[!])\[([1-9][0-9]{0,8})\](?![(:\[])/gu
-```
-Consequences (all must hold, F-SPK-T01):
-
-| Text | Mentions | Why |
-|---|---|---|
-| `see [12] and [40].` | `12, 40` | |
-| `([3])`, `**[3]**`, `- [3] item`, `[3]\n` | `3` | punctuation, emphasis, list, line end are fine |
-| `[12] then [12] again` | `12` | distinct |
-| `` `see [12]` `` | — | inline code |
-| ```` ```\n[12]\n``` ```` | — | fenced code |
-| `` `x`[1] `` | — | preceded by masked code |
-| `arr[0]`, `arr[1]`, `a[12]`, `é[2]`, `_[2]` | — | preceded by a word character / `[0]` not positive |
-| `[01]`, `[0]`, `[1234567890]`, `[-1]`, `[1.5]`, `[ 1 ]` | — | not a canonical key |
-| `[1](https://x)` | — | link |
-| `[1]: https://x` | — | reference definition |
-| `[1][ref]`, `[text][1]` | — | reference link (followed by `[` / preceded by `]`) |
-| `[[1]]` | — | wiki link (inner preceded by `[`) |
-| `![1]` | — | image syntax |
-| `[^1]`, `[^1]: note` | — | footnote (not digits) |
-| `- [ ] task`, `- [x] done`, `[X]` | — | checkbox (not digits) |
-| `see [1]: it…` | — | rejected by the `:` rule (accepted cost) |
+**F-SPK-M03 — The mention pattern** *(superseded 2026-11-20)*
+Spark mentions are the namespaced form `¤spark:<n>` / `¤sp:<n>` defined in
+[spec-mentions.md](spec-mentions.md) F-MEN-01…F-MEN-04, matched on the masked
+text (F-SPK-M02) with `namespacedPattern('spark', '[1-9][0-9]{0,8}')`. The bare
+`[n]` form is no longer detected; `[n]` remains the display form in chip labels.
+Test cases: spec-mentions.md F-MEN-06.
 
 **F-SPK-M04 — Cap**
 After de-duplication, only the first `MAX_KEYS_PER_MESSAGE` (12) keys are
