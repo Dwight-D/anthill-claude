@@ -3,14 +3,14 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { SparkContent, SparkNode, SparkStatus } from '../../types'
 import { color } from '../theme'
-import { extractMentions } from './spark-nodes/mentions'
+import { extractMentions, refScope } from './spark-nodes/mentions'
 import {
   batches, chipLabel, contentArgv, contentView, hash, infoArgv, isSpawnFailure, parseNodeLines, pendingKeys, truncate,
   CHIP_TITLE_MAX,
 } from './spark-nodes/model'
 
 // Spark node chips: a chip under a message for every Spark node it mentions as
-// `[n]`; pressing one opens an in-flow box with the node's title, type and
+// `¤sp:n` / `¤sp:PROJ-n`; pressing one opens an in-flow box with the node's title, type and
 // summary, and "Show content" fetches the full content on demand. Data comes
 // from `spark query --json --all --fields …` (batched, non-mutating), never
 // from `spark show`. Spec: docs/specs/spec-spark-nodes.md.
@@ -23,8 +23,8 @@ const status = atom({ plugin: 'anthill-claude', key: 'spark-status' } as const, 
 const nodes = atom({ plugin: 'anthill-claude', key: 'spark-nodes' } as const, {} as Record<string, SparkNode>)
 const missing = atom({ plugin: 'anthill-claude', key: 'spark-missing' } as const, {} as Record<string, true>)
 const contents = atom({ plugin: 'anthill-claude', key: 'spark-content' } as const, {} as Record<string, SparkContent>)
-const open = atom({ plugin: 'anthill-claude', key: 'spark-open' } as const, {} as Record<string, number>)
-const expanded = atom({ plugin: 'anthill-claude', key: 'spark-expanded' } as const, {} as Record<string, number>)
+const open = atom({ plugin: 'anthill-claude', key: 'spark-open' } as const, {} as Record<string, string>)
+const expanded = atom({ plugin: 'anthill-claude', key: 'spark-expanded' } as const, {} as Record<string, string>)
 
 type Dollar = EngineInterface
 
@@ -34,7 +34,7 @@ const log = ($: Dollar, line: string) => $.ui.log(line, { to: 'debug' })
 // --- data (top-level functions: `$` may only be handed to these) -------------
 
 // Keys being fetched right now; one scan's batches run serially.
-const inFlight = new Set<number>()
+const inFlight = new Set<string>()
 let failures = 0
 // The uuid of the last message a ranged read returned (a reload loses it).
 let lastSeenUuid: string | undefined
@@ -50,10 +50,12 @@ const countFailure = async ($: Dollar) => {
 }
 
 /** Fetches the title/type/summary of the mentioned keys that no cache holds. */
-const resolve = async ($: Dollar, keys: number[]) => {
+const resolve = async ($: Dollar, keys: string[]) => {
   if ((await read($, status)) === 'unavailable') return
   const pending = pendingKeys(keys, await read($, nodes), await read($, missing), inFlight)
   if (pending.length === 0) return
+  // Qualified refs resolve against the workspaces found from the session's directory (F-SPK-L01).
+  const cwd = await $.session.cwd()
   for (const k of pending) inFlight.add(k)
   const groups = batches(pending)
   try {
@@ -62,7 +64,7 @@ const resolve = async ($: Dollar, keys: number[]) => {
       try {
         let out: { exitCode: number; stdout: string; stderr: string }
         try {
-          out = await $.process.run(infoArgv(batch), { timeoutMs: RUN_TIMEOUT_MS })
+          out = await $.process.run(infoArgv(batch), { cwd, timeoutMs: RUN_TIMEOUT_MS })
         } catch (err) {
           if (isSpawnFailure(err)) {
             log($, `spark-nodes: spark unavailable: ${message(err)}`)
@@ -73,23 +75,32 @@ const resolve = async ($: Dollar, keys: number[]) => {
           await countFailure($)
           return
         }
+        // A batch holds one scope (batches()); a workspace batch's failures never count (F-SPK-L05).
+        const qualified = refScope(batch[0] as string) !== ''
+        const first = out.stderr.trim().split('\n')[0] ?? ''
         if (out.exitCode !== 0) {
-          log($, `spark-nodes: spark query → exit ${out.exitCode}: ${out.stderr.trim().split('\n')[0] ?? ''}`)
+          if (qualified) {
+            // Ambiguous project key, or a Spark without local workspaces: no chip for this scope.
+            log($, `spark-nodes: workspace query for ${batch.join(' ')} → exit ${out.exitCode}: ${first}`)
+            await update($, missing, m => ({ ...m, ...Object.fromEntries(batch.map(k => [k, true as const])) }))
+            continue
+          }
+          log($, `spark-nodes: spark query → exit ${out.exitCode}: ${first}`)
           await countFailure($)
           continue
         }
         const parsed = parseNodeLines(out.stdout)
         if (!parsed.ok) {
           log($, 'spark-nodes: unparseable spark query output')
-          await countFailure($)
+          if (!qualified) await countFailure($)
           continue
         }
         const found = new Set(parsed.nodes.map(n => n.key))
-        // Only keys that were asked for are cached.
+        // Only refs that were asked for are cached.
         const got = parsed.nodes.filter(n => batch.includes(n.key))
         const absent = batch.filter(k => !found.has(k))
-        await update($, nodes, n => ({ ...n, ...Object.fromEntries(got.map(g => [String(g.key), g])) }))
-        await update($, missing, m => ({ ...m, ...Object.fromEntries(absent.map(k => [String(k), true as const])) }))
+        await update($, nodes, n => ({ ...n, ...Object.fromEntries(got.map(g => [g.key, g])) }))
+        await update($, missing, m => ({ ...m, ...Object.fromEntries(absent.map(k => [k, true as const])) }))
         await update($, status, () => 'ok' as SparkStatus)
         failures = 0
       } finally {
@@ -102,15 +113,16 @@ const resolve = async ($: Dollar, keys: number[]) => {
 }
 
 /** Fetches one node's content (lazy: only from the "Show content" press). */
-const fetchContent = async ($: Dollar, key: number) => {
-  const id = String(key)
+const fetchContent = async ($: Dollar, key: string) => {
+  const id = key
+  const cwd = await $.session.cwd()
   const have = (await read($, contents))[id]
   if (have && (have.state === 'ok' || have.state === 'loading' || have.state === 'unsupported')) return
   const set = (value: SparkContent) => update($, contents, c => ({ ...c, [id]: value }))
   await set({ state: 'loading' })
   let out: { exitCode: number; stdout: string; stderr: string }
   try {
-    out = await $.process.run(contentArgv(key), { timeoutMs: RUN_TIMEOUT_MS })
+    out = await $.process.run(contentArgv(key), { cwd, timeoutMs: RUN_TIMEOUT_MS })
   } catch (err) {
     log($, `spark-nodes: content fetch failed: ${message(err)}`)
     await set({ state: 'failed' })
@@ -154,8 +166,8 @@ const scan = async ($: Dollar, range: { last: number } | { after: string } | { p
       const uuid = found.at(-1)?.uuid
       if (uuid) lastSeenUuid = uuid
     }
-    const keys: number[] = []
-    const seen = new Set<number>()
+    const keys: string[] = []
+    const seen = new Set<string>()
     for (const t of texts) {
       for (const k of extractMentions(t)) {
         if (!seen.has(k)) {
@@ -201,7 +213,7 @@ export const sparkNodes: Register = on => {
     const text = props.text ?? ''
     const known = await read($, nodes)
     const shown = extractMentions(text)
-      .map(k => known[String(k)])
+      .map(k => known[k])
       .filter((n): n is SparkNode => n !== undefined)
     if (shown.length === 0) return next(e)
 
@@ -210,9 +222,9 @@ export const sparkNodes: Register = on => {
     const openKey = (await read($, open))[site]
     const openNode = shown.find(n => n.key === openKey)
     const isExpanded = openNode !== undefined && (await read($, expanded))[site] === openNode.key
-    const content = openNode ? (await read($, contents))[String(openNode.key)] : undefined
+    const content = openNode ? (await read($, contents))[openNode.key] : undefined
 
-    const toggleChip = async (n: number) => {
+    const toggleChip = async (n: string) => {
       if ((await read($, open))[site] === n) {
         await update($, open, o => omit(o, site))
         await update($, expanded, x => omit(x, site))
@@ -221,8 +233,8 @@ export const sparkNodes: Register = on => {
         await update($, expanded, x => omit(x, site))
       }
     }
-    const toggleContent = async (n: number) => {
-      const hasContent = (await read($, expanded))[site] === n && (await read($, contents))[String(n)]?.state !== 'failed'
+    const toggleContent = async (n: string) => {
+      const hasContent = (await read($, expanded))[site] === n && (await read($, contents))[n]?.state !== 'failed'
       if (hasContent) {
         await update($, expanded, x => omit(x, site))
         return

@@ -67,8 +67,9 @@ export type Detail = {
   log: string[]
 }
 
-/** One node as `spark query --json --fields key,title,type,summary` prints it. */
-export type SparkNode = { key: number; title: string; type: string | null; summary: string }
+/** One node as `spark query --json --fields key,scope,ref,title,type,summary` prints it;
+ *  `key` is its canonical ref (`"12"`, `"PAY-12"`). */
+export type SparkNode = { key: string; title: string; type: string | null; summary: string }
 
 /** The lazily fetched content of one node. */
 export type SparkContent =
@@ -94,16 +95,16 @@ declare module 'claude-code' {
       'now-details': Record<string, Detail>
       /** Whether the spark CLI answered this session. */
       'spark-status': SparkStatus
-      /** Positive cache of Spark nodes by decimal key. */
+      /** Positive cache of Spark nodes by canonical ref. */
       'spark-nodes': Record<string, SparkNode>
-      /** Negative cache: keys a successful query did not return. */
+      /** Negative cache: refs a successful query did not return. */
       'spark-missing': Record<string, true>
-      /** Lazily fetched node content by decimal key. */
+      /** Lazily fetched node content by canonical ref. */
       'spark-content': Record<string, SparkContent>
-      /** Message site → the key whose info box is open. */
-      'spark-open': Record<string, number>
-      /** Message site → the key whose content shows. */
-      'spark-expanded': Record<string, number>
+      /** Message site → the ref whose info box is open. */
+      'spark-open': Record<string, string>
+      /** Message site → the ref whose content shows. */
+      'spark-expanded': Record<string, string>
     }
   }
 }

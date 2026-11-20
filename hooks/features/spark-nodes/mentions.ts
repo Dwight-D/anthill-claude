@@ -78,15 +78,28 @@ export const maskCode = (text: string): string => {
   return out.join('\n')
 }
 
-const MENTION = namespacedPattern('spark', '[1-9][0-9]{0,8}')
+/** Spark key form (spec-mentions.md F-MEN-02): `<n>` or `<PROJECT>-<n>`. */
+export const SPARK_KEY_SOURCE = '(?:[A-Za-z]{2,10}-)?[1-9][0-9]{0,8}'
 
-/** Distinct mentioned keys, first-appearance order, at most MAX_KEYS_PER_MESSAGE. */
-export const extractMentions = (text: string): number[] => {
+const MENTION = namespacedPattern('spark', SPARK_KEY_SOURCE)
+const REF = new RegExp(`^${SPARK_KEY_SOURCE}$`)
+
+/** Canonical ref string (`"12"`, `"PAY-12"`, prefix uppercased), or null when `s` is not a Spark key. */
+export const canonicalRef = (s: unknown): string | null => (typeof s === 'string' && REF.test(s) ? s.toUpperCase() : null)
+
+/** The scope of a canonical ref: its project key (`"PAY"`), or `""` for the global graph. */
+export const refScope = (ref: string): string => {
+  const i = ref.indexOf('-')
+  return i < 0 ? '' : ref.slice(0, i)
+}
+
+/** Distinct mentioned canonical refs, first-appearance order, at most MAX_KEYS_PER_MESSAGE. */
+export const extractMentions = (text: string): string[] => {
   if (typeof text !== 'string' || !text) return []
-  const seen = new Set<number>()
-  const out: number[] = []
+  const seen = new Set<string>()
+  const out: string[] = []
   for (const m of maskCode(text).matchAll(MENTION)) {
-    const n = Number(m[1])
+    const n = (m[1] as string).toUpperCase()
     if (seen.has(n)) continue
     seen.add(n)
     out.push(n)

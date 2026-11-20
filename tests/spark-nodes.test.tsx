@@ -7,9 +7,11 @@ import type { TestBody } from 'claude-code/testing'
 
 const PLUGIN = 'anthill-claude'
 
-const NODES: Record<number, { key: number; title: string; type: string | null; summary: string; content: string | null }> = {
+// Keyed by canonical ref; `key` is the number within the scope (PAY-3 and global 3 share it).
+const NODES: Record<string, { key: number; title: string; type: string | null; summary: string; content: string | null }> = {
   2: { key: 2, title: 'Payments API', type: 'component', summary: 'Handles card payments', content: 'Owns the card flow.' },
   3: { key: 3, title: 'Card vault', type: null, summary: '', content: null },
+  'PAY-3': { key: 3, title: 'Pay ledger', type: 'component', summary: 'Local ledger', content: 'Ledger notes.' },
 }
 
 const out = (exitCode: number, stdout: string, stderr = '') => ({
@@ -26,25 +28,33 @@ type Flags = {
   failing: boolean
   /** The content call answers as an older spark does. */
   oldSpark: boolean
+  /** Project keys whose qualified batches exit 1 as an ambiguous workspace. */
+  ambiguous: string[]
+  /** The `cwd` each call carried. */
+  cwds: unknown[]
 }
 
 const engine = (on: Parameters<TestBody>[1]): Flags => {
-  const flags: Flags = { calls: [], messages: [], missing: false, failing: false, oldSpark: false }
+  const flags: Flags = { calls: [], messages: [], missing: false, failing: false, oldSpark: false, ambiguous: [], cwds: [] }
   mock.clock(on, { now: Date.parse('2026-11-20T12:00:00Z') })
   mock.store(on)
   on('process.run', (_, e) => {
     const argv = [...e.argv]
     flags.calls.push(argv)
+    flags.cwds.push((e as { init?: { cwd?: unknown } }).init?.cwd)
     if (flags.missing) throw new Error('spawn spark ENOENT')
-    const keys = argv.flatMap((a, i) => (argv[i - 1] === '--key' ? [Number(a)] : []))
-    const wantsContent = argv.includes('key,title,type,summary,content')
+    const keys = argv.flatMap((a, i) => (argv[i - 1] === '--key' ? [a] : []))
+    const wantsContent = argv.includes('key,scope,ref,title,type,summary,content')
+    const scope = keys.map(k => (k.includes('-') ? k.split('-')[0] : '')).find(() => true) as string
     if (wantsContent && flags.oldSpark) return out(1, '', 'spark: unknown field "content"')
+    if (scope && flags.ambiguous.includes(scope)) return out(1, '', `spark: project key "${scope}" is ambiguous`)
     if (flags.failing) return out(1, '', 'boom')
     const lines = keys.flatMap(k => {
       const n = NODES[k]
       if (!n) return []
       const { content, ...info } = n
-      return [JSON.stringify(wantsContent ? { ...info, content } : info)]
+      const rec = { ...info, scope: k.includes('-') ? k.split('-')[0] : '', ref: k }
+      return [JSON.stringify(wantsContent ? { ...rec, content } : rec)]
     })
     return out(0, lines.join('\n') + (lines.length ? '\n' : ''))
   })
@@ -55,6 +65,7 @@ const engine = (on: Parameters<TestBody>[1]): Flags => {
     const at = flags.messages.findIndex(m => m.uuid === args.after)
     return { value: at < 0 ? { deny: 'gone' } : flags.messages.slice(at + 1) }
   })
+  on('session.cwd', () => ({ value: '/work' }))
   on('ui.log', () => ({ value: undefined }))
   on('ui.status', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
@@ -78,7 +89,7 @@ const start = async ($: Parameters<TestBody>[0], flags: Flags, text = 'see ¤sp:
   await new Promise(r => setTimeout(r, 20))
 }
 
-const infoCalls = (flags: Flags) => flags.calls.filter(c => !c.includes('key,title,type,summary,content'))
+const infoCalls = (flags: Flags) => flags.calls.filter(c => !c.includes('key,scope,ref,title,type,summary,content'))
 
 const message = (
   $: Parameters<TestBody>[0],
@@ -105,11 +116,11 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     const query = flags.calls.filter(c => c[1] === 'query')
     expect(query.map(c => c.join(' '))).toContain(
-      'spark query --json --all --fields key,title,type,summary --key 2 --key 3 --key 99',
+      'spark query --json --all --fields key,scope,ref,title,type,summary --key 2 --key 3 --key 99',
     )
     expect(flags.calls.some(c => c.includes('show'))).toBe(false)
     expect(infoCalls(flags).length).toBeGreaterThan(0)
-    expect(infoCalls(flags).every(c => c.join(' ') === 'spark query --json --all --fields key,title,type,summary --key 2 --key 3 --key 99')).toBe(true)
+    expect(infoCalls(flags).every(c => c.join(' ') === 'spark query --json --all --fields key,scope,ref,title,type,summary --key 2 --key 3 --key 99')).toBe(true)
     // Exactly one info call overall (session.start read the message; the turn's `after` read found none new).
     expect(infoCalls(flags)).toHaveLength(1)
 
@@ -131,16 +142,16 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect((await ui.find({ type: 'Text', text: /Handles card payments/ }))).toBeDefined()
     expect((await ui.find({ type: 'Button', key: 'spark-content:2' }))?.props.label).toBe('Show content')
     expect(await ui.find({ type: 'Text', text: /Owns the card flow/ })).toBeUndefined()
-    expect(flags.calls.some(c => c.includes('key,title,type,summary,content'))).toBe(false)
+    expect(flags.calls.some(c => c.includes('key,scope,ref,title,type,summary,content'))).toBe(false)
 
     await ui.press({ key: 'spark-chip:2' })
     expect(await ui.find({ key: 'spark-info' })).toBeUndefined()
     await ui.press({ key: 'spark-chip:2' })
 
     await ui.press({ key: 'spark-content:2' })
-    const contentCalls = () => flags.calls.filter(c => c.includes('key,title,type,summary,content'))
+    const contentCalls = () => flags.calls.filter(c => c.includes('key,scope,ref,title,type,summary,content'))
     expect(contentCalls().map(c => c.join(' '))).toEqual([
-      'spark query --json --all --fields key,title,type,summary,content --key 2',
+      'spark query --json --all --fields key,scope,ref,title,type,summary,content --key 2',
     ])
     expect((await ui.find({ type: 'Text', text: /Owns the card flow\./ }))).toBeDefined()
     expect((await ui.find({ type: 'Button', key: 'spark-content:2' }))?.props.label).toBe('Hide content')
@@ -255,6 +266,49 @@ test('a user message gets chips only from the composer', async ($, on) => {
   const other = await message($, 'terminal', 'u2', 'look at ¤sp:2', 'UserMessage', 'task-notification')
   expect(await other.findAll({ type: 'Button' })).toHaveLength(0)
   await other.unmount()
+})
+
+test('every spark call carries the session cwd', async ($, on) => {
+  const flags = engine(on)
+  await start($, flags)
+  const ui = await message($, 'terminal', 'm1', TEXT)
+  await ui.press({ key: 'spark-chip:2' })
+  await ui.press({ key: 'spark-content:2' })
+  await ui.unmount()
+  expect(flags.calls.length).toBeGreaterThan(1)
+  expect(flags.cwds).toEqual(flags.calls.map(() => '/work'))
+})
+
+test('qualified and global mentions batch per scope and show [PAY-3] and [3]', async ($, on) => {
+  const flags = engine(on)
+  await start($, flags, 'see ¤sp:PAY-3 and ¤sp:3 and ¤sp:pay-3')
+  expect(infoCalls(flags).map(c => c.join(' '))).toEqual([
+    'spark query --json --all --fields key,scope,ref,title,type,summary --key PAY-3',
+    'spark query --json --all --fields key,scope,ref,title,type,summary --key 3',
+  ])
+  const ui = await message($, 'terminal', 'm1', 'see ¤sp:PAY-3 and ¤sp:3')
+  expect((await ui.findAll({ type: 'Button' })).map(b => b.key)).toEqual(['spark-chip:PAY-3', 'spark-chip:3'])
+  await ui.press({ key: 'spark-chip:PAY-3' })
+  expect(await ui.find({ type: 'Text', text: /Pay ledger/ })).toBeDefined()
+  await ui.press({ key: 'spark-content:PAY-3' })
+  expect(await ui.find({ type: 'Text', text: /Ledger notes\./ })).toBeDefined()
+  await ui.press({ key: 'spark-chip:3' })
+  expect(await ui.find({ type: 'Text', text: /Card vault/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('an ambiguous workspace shows no chip, keeps global chips and never turns the feature off', async ($, on) => {
+  const flags = engine(on)
+  flags.ambiguous = ['PAY']
+  await start($, flags, 'see ¤sp:PAY-3 and ¤sp:2')
+  for (const [i, t] of ['¤sp:PAY-4', '¤sp:PAY-5', '¤sp:PAY-6', '¤sp:3'].entries()) {
+    flags.messages = [...flags.messages, { role: 'assistant', text: t, uuid: `amb-${i}` }]
+    await complete($, `amb-${i}`)
+    await new Promise(r => setTimeout(r, 20))
+  }
+  const ui = await message($, 'terminal', 'm1', 'see ¤sp:PAY-3 and ¤sp:2 and ¤sp:3')
+  expect((await ui.findAll({ type: 'Button' })).map(b => b.key)).toEqual(['spark-chip:2', 'spark-chip:3'])
+  await ui.unmount()
 })
 
 test('bare [n] mentions produce no chips and no process call', async ($, on) => {
