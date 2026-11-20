@@ -3,7 +3,9 @@
 **Feature:** `spark-nodes`
 **Files:** `hooks/features/spark-nodes.tsx` (+ pure helpers under `hooks/features/spark-nodes/`), `hooks/theme.ts`
 **Plugin version:** 0.5.0
-**Status:** Specified 2026-11-20, not implemented
+**Status:** Specified 2026-11-20, not implemented. Amended 2026-11-20 for Spark
+local workspaces (qualified keys `PAY-12`, string keys, explicit cwd) — §11;
+inline notes mark each superseded requirement.
 
 When a conversation message mentions a Spark node by its canonical display
 form `[n]`, the plugin shows a chip for it under the message, the way the Now
@@ -44,10 +46,13 @@ handles).
 **F-SPK-D02 — Binary and database**
 - The executable is `spark`, resolved from `PATH` by `$.process.run` (argv[0]
   `"spark"`, no path, no shell).
-- The plugin passes **no** `--db` flag and sets no `SPARK_DB`: the database is
-  whatever the Claude Code process inherits (`SPARK_DB`, else Spark's default
-  `~/.spark/spark.db`).
-- No `cwd`, `env` or `stdin` is passed to `$.process.run` (session defaults).
+- The plugin passes **no** `--db` flag and sets no `SPARK_DB`: the global
+  database is whatever the Claude Code process inherits (`SPARK_DB`, else
+  Spark's default `~/.spark/spark.db`).
+- *(Amended, F-SPK-L01.)* `cwd` **is** passed: `await $.session.cwd()`, so
+  Spark discovers the project's local workspace (`.spark/`) from the session's
+  working directory, never from wherever the Claude Code process happened to
+  start. No `env` or `stdin` is passed.
 - Timeout: `timeoutMs: 10_000`, the Now pane's `RUN_TIMEOUT_MS`.
 
 ---
@@ -62,7 +67,7 @@ runtime import, no Node import), so it runs under the engine and under
 ```ts
 export const MAX_KEYS_PER_MESSAGE = 12
 /** Distinct mentioned keys, first-appearance order, at most MAX_KEYS_PER_MESSAGE. */
-export const extractMentions = (text: string): number[]
+export const extractMentions = (text: string): number[]   // amended: string[] of canonical refs, F-SPK-L02
 /** `text` with every code region replaced per F-SPK-M02 (exported for tests). */
 export const maskCode = (text: string): string
 ```
@@ -110,8 +115,8 @@ Module: `hooks/features/spark-nodes/model.ts` — pure, like `mentions.ts`.
 export const MAX_KEYS_PER_BATCH = 50
 export const INFO_FIELDS = 'key,title,type,summary'
 export const CONTENT_FIELDS = 'key,title,type,summary,content'
-export const infoArgv = (keys: number[]): string[]
-export const contentArgv = (key: number): string[]
+export const infoArgv = (keys: number[]): string[]    // amended: string refs, F-SPK-L03
+export const contentArgv = (key: number): string[]     // amended: string ref, F-SPK-L03
 ```
 - `infoArgv([12, 40])` →
   `['spark', 'query', '--json', '--all', '--fields', 'key,title,type,summary', '--key', '12', '--key', '40']`
@@ -552,3 +557,81 @@ Not modified: `hooks/features/now-pane.tsx`, `now-pane/*`, existing tests.
 - Rendering content as Markdown.
 - Expiring caches / live refresh of edited nodes beyond F-SPK-F06.
 - Title-based mentions (no `[n]`), MCP fallback, `spark show`.
+
+---
+
+## 11. Amendment: Spark local workspaces (2026-11-20)
+
+Spark gained project-local graphs (`spark/docs/specs/spec-local-workspace.md`).
+A local workspace's nodes have qualified keys (`PAY-12`, display `[PAY-12]`);
+a bare number (`12`) always means the user's global graph. Mentions carry both
+forms (spec-mentions.md F-MEN-02, F-MEN-04). These requirements supersede the
+parts of §1–§9 they name.
+
+**F-SPK-L01 — Working directory (supersedes the "no `cwd`" line of F-SPK-D02)**
+Every `$.process.run` for Spark passes `{ cwd: await $.session.cwd(), timeoutMs: 10_000 }`.
+Spark resolves qualified keys against the local workspaces it discovers by
+walking up from that directory (Spark F-LWS-D02). Without it, `PAY-12` could
+resolve against the wrong project or none.
+
+**F-SPK-L02 — Keys are canonical strings (supersedes number keys in F-SPK-M01, C04, C05, S01)**
+- `extractMentions` returns `string[]`: canonical refs (`"12"`, `"PAY-12"`,
+  prefix uppercased), de-duplicated on the canonical form.
+- All caches (`spark-nodes`, `spark-missing`, `spark-content`) are keyed by the
+  canonical ref string; `spark-open` / `spark-expanded` values are ref strings;
+  `pendingKeys` and `batches` operate on strings; the in-flight set is a
+  `Set<string>`.
+- `SparkNode.key` becomes `string` (the canonical ref).
+- Chip label and info-box header show `[${ref}]` (`[12]`, `[PAY-12]`); Button
+  keys are `spark-chip:${ref}` and `spark-content:${ref}`; the "more lines"
+  hint is `spark show --peek <ref>`.
+
+**F-SPK-L03 — Argv and batching (supersedes F-SPK-C01's signatures)**
+- `infoArgv(refs: string[])` / `contentArgv(ref: string)` produce the same
+  argv shapes as F-SPK-C01 with each `--key` value being the ref string:
+  `['spark','query','--json','--all','--fields','key,ref,title,type,summary','--key','PAY-12','--key','12']`.
+  `INFO_FIELDS` becomes `'key,ref,title,type,summary'`, `CONTENT_FIELDS`
+  `'key,ref,title,type,summary,content'`.
+- `batches` groups refs **by scope** before chunking: all bare refs form the
+  global group; each distinct project key forms its own group; groups in first
+  appearance order, each chunked at `MAX_KEYS_PER_BATCH`. One spawn therefore
+  never mixes graphs, so a problem in one workspace cannot void another's
+  chips.
+
+**F-SPK-L04 — Parsing (amends F-SPK-C03)**
+A line's identity is its `ref` when `ref` is a string matching the F-MEN-02
+Spark key form; otherwise its `key` when `key` is a positive safe integer
+(→ its decimal string, a global ref; an older Spark that predates `ref`);
+otherwise the batch is `{ ok: false }`. A string `key` without a valid `ref`
+is accepted only if it matches the qualified form. The requested-but-absent
+rule (negative cache) compares canonical ref strings.
+
+**F-SPK-L05 — Outcomes for workspace batches (amends F-SPK-F02)**
+For a batch of **qualified** refs (one project key):
+| Outcome | Effect |
+|---|---|
+| exit 0 | as F-SPK-F02 (Spark skips refs of an unknown project key silently, Spark F-CLI-LWS-11, so they become negatively cached) |
+| exit ≠ 0 and stderr contains `ambiguous` (two workspaces share the project key, Spark F-LWS-X02) | the batch's refs are negatively cached; one debug line; **not** counted as a failure |
+| exit ≠ 0 otherwise (e.g. an older Spark rejecting a non-integer `--key`) | the batch's refs are negatively cached; one debug line; **not** counted as a failure |
+| `run` rejects | as F-SPK-F02 |
+Consecutive-failure counting and the `'unavailable'` switch apply to global
+batches and to rejections only, so a Spark without local-workspace support
+keeps showing global chips.
+
+**F-SPK-L06 — Requires**
+Qualified chips need Spark with capability `local-workspaces` (Spark
+F-LWS-J02); global chips keep working with any Spark that has `query-fields`
+(F-SPK-D01). The plugin still does not call `spark meta capabilities`.
+
+**F-SPK-L07 — Tests (adds to F-SPK-T01…T04)**
+- Mentions: the qualified cases of spec-mentions.md F-MEN-06.
+- Model: `infoArgv(['PAY-12','12'])` exact array; `batches` groups
+  `['12','PAY-1','40','OPS-2','PAY-3']` into `[['12','40'],['PAY-1','PAY-3'],['OPS-2']]`;
+  `parseNodeLines` on `{"key":"PAY-3","ref":"PAY-3",…}`, on `{"key":12,"ref":"12",…}`,
+  on an old-Spark line `{"key":12,…}` (→ `"12"`), and `{"key":"PAY-3",…}` without
+  `ref` (→ `"PAY-3"`); `{"key":"x"}` → `{ ok: false }`.
+- Engine: every `process.run` call carries `cwd` equal to the session cwd; a
+  message with `¤sp:PAY-3 and ¤sp:12` makes two calls (one per scope) and shows
+  chips `[PAY-3]` and `[12]`; a qualified batch exiting 1 with
+  `project key "PAY" is ambiguous` shows no `PAY` chip, still shows `[12]`, and
+  does not flip `spark-status` after three such messages.

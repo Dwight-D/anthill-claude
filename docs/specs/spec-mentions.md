@@ -2,6 +2,9 @@
 
 Status: specified 2026-11-20. Applies to every feature that turns a key
 mentioned in message text into a chip (today: `spark-nodes`, `now-pane`).
+Amended 2026-11-20: qualified Spark keys (`¤sp:PROJ-12`) for Spark local
+workspaces (`spark/docs/specs/spec-local-workspace.md` F-LWS-K01) — F-MEN-02,
+F-MEN-04, F-MEN-06.
 
 ## Why
 
@@ -45,7 +48,7 @@ export const namespacedPattern = (program: Program, keySource: string): RegExp
 
 | Program | Names | Key form | Example |
 |---|---|---|---|
-| spark | `spark`, `sp` | `[1-9][0-9]{0,8}` (positive integer, no leading zero) | `¤spark:123`, `¤sp:123` |
+| spark | `spark`, `sp` | `(?:[A-Za-z]{2,10}-)?[1-9][0-9]{0,8}` — a bare positive integer (global graph), or a qualified key `<PROJECT>-<n>` (Spark local workspace; `<PROJECT>` is 2–10 ASCII letters, any case) | `¤spark:123`, `¤sp:123`, `¤sp:PAY-12` |
 | anthill | `anthill`, `ah` | `<PREFIX>-[1-9][0-9]*`, `<PREFIX>` = the installation's key prefix, case-sensitive | `¤anthill:ANT-123`, `¤ah:ANT-123` |
 
 Adding a program later = one entry here + its feature; nothing else parses
@@ -69,7 +72,15 @@ with `names` the program's names made case-insensitive per character
 
 ## F-MEN-04 — Spark: namespaced form only
 
-Spark node mentions are **only** `¤spark:<n>` / `¤sp:<n>`. The bare `[n]` form
+Spark node mentions are **only** `¤spark:<key>` / `¤sp:<key>`, where `<key>`
+is a bare `<n>` or a qualified `<PROJECT>-<n>` (F-MEN-02). The mention's value
+is the **canonical Spark key reference string**: the bare digits (`"12"`), or
+the project key uppercased plus `-<n>` (`¤sp:pay-12` → `"PAY-12"`), exactly as
+Spark parses and prints it (Spark F-LWS-K02). A bare number names the user's
+global Spark graph; a qualified key names the local workspace with that
+project key as discovered from the session's working directory (Spark
+F-LWS-D01…D02) — which is why spark-nodes runs `spark` with the session cwd
+(spec-spark-nodes.md F-SPK-D02). The bare `[n]` form
 is no longer detected (it stays Spark's *display* form in chip labels and CLI
 output). Code masking (spec-spark-nodes.md F-SPK-M02) still applies first: a
 mention inside inline or fenced code is not a mention. The per-message cap
@@ -103,9 +114,16 @@ form behavior stays exactly as before).
   `¤sp:7a` → none; `¤sp: 7` → none; `*sp:7` → none; `¤spk:7` → none.
 
 Spark (`tests/spark-nodes-mentions.spec.mjs`): replace the `[n]` table with:
-`see ¤sp:12 and ¤spark:40.` → 12, 40; `¤sp:12 ¤spark:12` → 12; `[12]` → none;
+`see ¤sp:12 and ¤spark:40.` → "12", "40"; `¤sp:12 ¤spark:12` → "12"; `[12]` → none;
 `` `¤sp:12` `` → none; fenced `¤sp:12` → none; `¤ah:12` → none;
 `¤sp:0`, `¤sp:1234567890` → none; cap at 12 still holds.
+Qualified keys: `¤sp:PAY-12` → "PAY-12"; `¤sp:pay-12` and `¤Spark:Pay-12` →
+"PAY-12"; `¤sp:PAY-12 ¤sp:pay-12` → one key "PAY-12"; `¤sp:PAY-12 ¤sp:12` →
+"PAY-12", "12" (different graphs); `¤sp:P-12` (1 letter),
+`¤sp:ABCDEFGHIJK-1` (11 letters), `¤sp:PA1-2`, `¤sp:PAY-012`, `¤sp:PAY-0`,
+`¤sp:PAY12`, `¤sp:PAY-`, `¤sp:PAY-12-3`, `¤sp:PAY-12a` → none.
+Anthill exclusion still holds for qualified Spark keys: `¤sp:ANT-5` is a Spark
+mention "ANT-5" and **not** an anthill mention (F-MEN-05).
 
 Anthill (`tests/now-pane-keys.spec.mjs`, prefix `ANT`): `¤ah:ANT-5` → ANT-5;
 `¤Anthill:ANT-5` → ANT-5; `¤ah:ANT-5 and ANT-5` → [ANT-5]; `¤jira:ANT-5` → none;
