@@ -56,3 +56,22 @@ test('the prefix is read from workstreams.md frontmatter', () => {
   assert.equal(readPrefix('# Workstreams\nno frontmatter'), null)
   assert.equal(readPrefix(''), null)
 })
+
+test('namespaced anthill mentions (spec-mentions F-MEN-05)', () => {
+  assert.deepEqual(extractKeys('¤ah:ANT-5', 'ANT'), ['ANT-5'])
+  assert.deepEqual(extractKeys('¤Anthill:ANT-5', 'ANT'), ['ANT-5'])
+  assert.deepEqual(extractKeys('¤ah:ANT-5 and ANT-5', 'ANT'), ['ANT-5'])
+  assert.deepEqual(extractKeys('¤jira:ANT-5', 'ANT'), [])
+  assert.deepEqual(extractKeys('¤sp:ANT-5', 'ANT'), [])
+  assert.deepEqual(extractKeys('¤jira:ANT-5 then ANT-6', 'ANT'), ['ANT-6'])
+  assert.deepEqual(extractKeys('¤ah:ant-5', 'ANT'), [])
+})
+
+test('parseKeyArg accepts the namespaced form', () => {
+  assert.equal(parseKeyArg('¤ah:ANT-74', 'ANT'), 'ANT-74')
+  assert.equal(parseKeyArg('¤anthill:ANT-74', 'ANT'), 'ANT-74')
+  assert.equal(parseKeyArg('¤AH:ANT-74', 'ANT'), 'ANT-74')
+  assert.equal(parseKeyArg('¤sp:ANT-74', 'ANT'), null)
+  assert.equal(parseKeyArg('¤ah:BH-74', 'ANT'), null)
+  assert.equal(parseKeyArg('¤ah:74', 'ANT'), null)
+})
