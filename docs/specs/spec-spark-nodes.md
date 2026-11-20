@@ -610,24 +610,30 @@ F-LWS-J01). Therefore:
 - When `ref` is **absent** (an older Spark without `local-workspaces`), the
   identity is `String(key)` for a positive safe integer `key` — valid only
   because such a Spark has no local workspaces, so its keys are all global.
+  A line with a non-empty `scope` but no `ref` is therefore not an old-Spark
+  line: it fails the whole batch (`{ ok: false }`).
 - `ref` present but invalid, or `key` not a positive safe integer → the whole
   batch is `{ ok: false }`.
-- `key` alone is never used as identity when `ref` is present; `scope` is
-  informational (it must agree with `ref`'s prefix; a disagreement →
-  `{ ok: false }`).
+- `key` alone is never used as identity when `ref` is present. `scope`, when
+  present, must equal **exactly** the uppercased prefix of `ref` (`""` for a
+  bare `ref`); any other value — including a lowercase `"pay"` for
+  `"PAY-3"` — fails the whole batch (`{ ok: false }`).
 The requested-but-absent rule (negative cache) compares canonical ref strings.
 
 **F-SPK-L05 — Outcomes for workspace batches (amends F-SPK-F02)**
 For a batch of **qualified** refs (one project key):
 | Outcome | Effect |
 |---|---|
-| exit 0 | as F-SPK-F02 (Spark skips refs of an unknown project key silently, Spark F-CLI-LWS-11, so they become negatively cached) |
+| exit 0, `parseNodeLines` → `ok: true` | as F-SPK-F02 (Spark skips refs of an unknown project key silently, Spark F-CLI-LWS-11, so they become negatively cached) |
+| exit 0, `parseNodeLines` → `{ ok: false }` | one debug line `spark-nodes: unparseable spark query output`; the batch's refs are **not** cached (a later trigger retries); **not** counted as a failure |
 | exit ≠ 0 and stderr contains `ambiguous` (two workspaces share the project key, Spark F-LWS-X02) | the batch's refs are negatively cached; one debug line; **not** counted as a failure |
 | exit ≠ 0 otherwise (e.g. an older Spark rejecting a non-integer `--key`) | the batch's refs are negatively cached; one debug line; **not** counted as a failure |
 | `run` rejects | as F-SPK-F02 |
 Consecutive-failure counting and the `'unavailable'` switch apply to global
-batches and to rejections only, so a Spark without local-workspace support
-keeps showing global chips.
+batches and to rejections only: no outcome of a qualified batch other than a
+rejection changes the failure count or `spark-status`. A Spark without
+local-workspace support, or one broken repository workspace, therefore never
+disables the feature globally — global chips keep working.
 
 **F-SPK-L06 — Requires**
 Qualified chips need Spark with capability `local-workspaces` (Spark
