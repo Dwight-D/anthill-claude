@@ -589,22 +589,33 @@ resolve against the wrong project or none.
 **F-SPK-L03 — Argv and batching (supersedes F-SPK-C01's signatures)**
 - `infoArgv(refs: string[])` / `contentArgv(ref: string)` produce the same
   argv shapes as F-SPK-C01 with each `--key` value being the ref string:
-  `['spark','query','--json','--all','--fields','key,ref,title,type,summary','--key','PAY-12','--key','12']`.
-  `INFO_FIELDS` becomes `'key,ref,title,type,summary'`, `CONTENT_FIELDS`
-  `'key,ref,title,type,summary,content'`.
+  `['spark','query','--json','--all','--fields','key,scope,ref,title,type,summary','--key','PAY-12','--key','12']`.
+  `INFO_FIELDS` becomes `'key,scope,ref,title,type,summary'`, `CONTENT_FIELDS`
+  `'key,scope,ref,title,type,summary,content'`. The plugin never passes
+  `--global`: it must resolve qualified refs in the session's workspaces, and
+  bare refs are global in every scope anyway (Spark F-LWS-K04).
 - `batches` groups refs **by scope** before chunking: all bare refs form the
   global group; each distinct project key forms its own group; groups in first
   appearance order, each chunked at `MAX_KEYS_PER_BATCH`. One spawn therefore
   never mixes graphs, so a problem in one workspace cannot void another's
   chips.
 
-**F-SPK-L04 — Parsing (amends F-SPK-C03)**
-A line's identity is its `ref` when `ref` is a string matching the F-MEN-02
-Spark key form; otherwise its `key` when `key` is a positive safe integer
-(→ its decimal string, a global ref; an older Spark that predates `ref`);
-otherwise the batch is `{ ok: false }`. A string `key` without a valid `ref`
-is accepted only if it matches the qualified form. The requested-but-absent
-rule (negative cache) compares canonical ref strings.
+**F-SPK-L04 — Parsing: identity is `ref` (amends F-SPK-C03)**
+Spark's JSON node records carry `key` (always an integer — the number
+*within* its scope, so `PAY-12` and global `12` both have `key: 12`), `scope`
+(`"PAY"`, or `""` for global) and `ref` (`"PAY-12"` / `"12"`) (Spark
+F-LWS-J01). Therefore:
+- A line's identity is its `ref` when `ref` is a string matching the F-MEN-02
+  Spark key form (canonicalised: prefix uppercased).
+- When `ref` is **absent** (an older Spark without `local-workspaces`), the
+  identity is `String(key)` for a positive safe integer `key` — valid only
+  because such a Spark has no local workspaces, so its keys are all global.
+- `ref` present but invalid, or `key` not a positive safe integer → the whole
+  batch is `{ ok: false }`.
+- `key` alone is never used as identity when `ref` is present; `scope` is
+  informational (it must agree with `ref`'s prefix; a disagreement →
+  `{ ok: false }`).
+The requested-but-absent rule (negative cache) compares canonical ref strings.
 
 **F-SPK-L05 — Outcomes for workspace batches (amends F-SPK-F02)**
 For a batch of **qualified** refs (one project key):
@@ -627,9 +638,11 @@ F-LWS-J02); global chips keep working with any Spark that has `query-fields`
 - Mentions: the qualified cases of spec-mentions.md F-MEN-06.
 - Model: `infoArgv(['PAY-12','12'])` exact array; `batches` groups
   `['12','PAY-1','40','OPS-2','PAY-3']` into `[['12','40'],['PAY-1','PAY-3'],['OPS-2']]`;
-  `parseNodeLines` on `{"key":"PAY-3","ref":"PAY-3",…}`, on `{"key":12,"ref":"12",…}`,
-  on an old-Spark line `{"key":12,…}` (→ `"12"`), and `{"key":"PAY-3",…}` without
-  `ref` (→ `"PAY-3"`); `{"key":"x"}` → `{ ok: false }`.
+  `parseNodeLines` on `{"key":3,"scope":"PAY","ref":"PAY-3",…}` (→ `"PAY-3"`),
+  on `{"key":12,"scope":"","ref":"12",…}` (→ `"12"`), on an old-Spark line
+  `{"key":12,…}` (→ `"12"`); a batch holding both `{"key":3,"scope":"PAY","ref":"PAY-3"}`
+  and `{"key":3,"scope":"","ref":"3"}` yields two distinct nodes; `{"key":3,"ref":"x"}`,
+  `{"key":"3","ref":"3"}` and `{"key":3,"scope":"OPS","ref":"PAY-3"}` → `{ ok: false }`.
 - Engine: every `process.run` call carries `cwd` equal to the session cwd; a
   message with `¤sp:PAY-3 and ¤sp:12` makes two calls (one per scope) and shows
   chips `[PAY-3]` and `[12]`; a qualified batch exiting 1 with
